@@ -1,0 +1,41 @@
+package com.example.dropinskins.domain
+
+import android.content.Context
+import android.content.Intent
+import com.example.dropinskins.data.model.*
+
+class ReportGenerator(private val context: Context) {
+
+    fun generateReport(
+        round: Round,
+        participants: List<Participant>,
+        holeResults: List<HoleResult>
+    ): String {
+        val sb = StringBuilder()
+        sb.append("Drop-in-Skins Round Report\n")
+        sb.append("Date: ${java.util.Date(round.date)}\n")
+        sb.append("Holes: ${round.totalHoles}\n")
+        sb.append("Bet: \$${round.betAmount}\n\n")
+
+        sb.append("Participants:\n")
+        participants.forEach { 
+            sb.append("- ${it.name} (Start: ${it.startHole}, End: ${it.endHole ?: "Round End"})\n")
+        }
+        
+        sb.append("\nResults per Hole:\n")
+        holeResults.forEach { result ->
+            sb.append("Hole ${result.holeNumber}: ${result.participantScores}\n")
+        }
+
+        return sb.toString()
+    }
+
+    fun shareReport(report: String) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "Golf Skins Round Report")
+            putExtra(Intent.EXTRA_TEXT, report)
+        }
+        context.startActivity(Intent.createChooser(intent, "Share Report Via"))
+    }
+}
