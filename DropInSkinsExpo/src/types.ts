@@ -1,6 +1,8 @@
 export interface Player {
   id?: number;
   name: string;
+  phone?: string;
+  email?: string;
 }
 
 export interface Round {
@@ -9,6 +11,7 @@ export interface Round {
   betAmount: number;
   date: number;
   isCompleted: boolean;
+  useCarryovers: boolean;
   initialCarryoverAmount?: number;
   initialCarryoverEligibleNames?: string; // JSON string in DB, but let's handle it as string for the interface or string[] if we parse it
 }

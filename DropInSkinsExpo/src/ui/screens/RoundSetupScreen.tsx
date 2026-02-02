@@ -6,6 +6,7 @@ import { Player, Carryover } from "../../types";
 export const RoundSetupScreen = ({ navigation }: any) => {
     const [holes, setHoles] = useState("9");
     const [bet, setBet] = useState("0.01");
+    const [useCarryovers, setUseCarryovers] = useState(true);
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
     const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<number>>(new Set());
     const [lastRoundCOs, setLastRoundCOs] = useState<Carryover[]>([]);
@@ -25,6 +26,7 @@ export const RoundSetupScreen = ({ navigation }: any) => {
         if (lastRound && lastRound.id) {
             setHoles(String(lastRound.totalHoles));
             setBet(String(lastRound.betAmount));
+            setUseCarryovers(lastRound.useCarryovers !== undefined ? lastRound.useCarryovers : true);
             const cos = await DatabaseService.getCarryovers(lastRound.id);
             if (cos.length > 0) {
                 setLastRoundCOs(cos);
@@ -44,17 +46,21 @@ export const RoundSetupScreen = ({ navigation }: any) => {
     const handleStart = async () => {
         const roundId = await DatabaseService.createRound(
             parseInt(holes, 10),
-            parseFloat(bet)
+            parseFloat(bet),
+            useCarryovers
         );
 
         // Inherit carryovers - save them individually as Hole 0 COs for the new round
-        for (const co of lastRoundCOs) {
-            await DatabaseService.saveCarryover(
-                Number(roundId),
-                0,
-                co.amount,
-                co.eligibleParticipantNames
-            );
+        // ONLY if carryovers are enabled
+        if (useCarryovers) {
+            for (const co of lastRoundCOs) {
+                await DatabaseService.saveCarryover(
+                    Number(roundId),
+                    0,
+                    co.amount,
+                    co.eligibleParticipantNames
+                );
+            }
         }
 
         // Add selected players as participants starting on hole 1
@@ -141,6 +147,13 @@ const styles = StyleSheet.create({
     label: { fontSize: 16, marginBottom: 5, fontWeight: "600" },
     input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 5, padding: 10, marginBottom: 20 },
     row: { flexDirection: "row", gap: 10 },
+    switchRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20, backgroundColor: '#f9f9f9', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#eee' },
+    toggleBtn: { paddingHorizontal: 20, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+    toggleOn: { backgroundColor: '#4CD964', borderColor: '#4CD964' },
+    toggleOff: { backgroundColor: '#fff', borderColor: '#ccc' },
+    toggleText: { fontWeight: 'bold', fontSize: 14 },
+    toggleTextOn: { color: '#fff' },
+    toggleTextOff: { color: '#999' },
     flex1: { flex: 1 },
     list: { flex: 1, marginVertical: 10 },
     playerItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: "#eee" },

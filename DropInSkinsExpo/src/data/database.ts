@@ -16,19 +16,20 @@ const webMock = {
 
     runAsync: async (sql: string, ...args: any[]): Promise<any> => {
         if (sql.includes("INSERT INTO players")) {
-            const name = args[0];
-            const newPlayer = { id: webMock.players.length + 1, name };
+            const [name, phone, email] = args;
+            const newPlayer = { id: webMock.players.length + 1, name, phone, email };
             webMock.players.push(newPlayer);
             return { lastInsertRowId: newPlayer.id };
         }
         if (sql.includes("INSERT INTO rounds")) {
-            const [totalHoles, betAmount, date, initialCoAmount, initialCoEligible] = args;
+            const [totalHoles, betAmount, date, useCarryovers, initialCoAmount, initialCoEligible] = args;
             const newRound = {
                 id: webMock.rounds.length + 1,
                 totalHoles,
                 betAmount,
                 date,
                 isCompleted: false,
+                useCarryovers: !!useCarryovers,
                 initialCarryoverAmount: initialCoAmount || 0,
                 initialCarryoverEligibleNames: initialCoEligible || "[]"
             };
@@ -69,8 +70,20 @@ const webMock = {
             return { lastInsertRowId: 1 };
         }
         if (sql.includes("DELETE FROM carryovers")) {
+            if (sql.includes("originatingHole > 0")) {
+                const roundId = args[0];
+                webMock.carryovers = webMock.carryovers.filter(c => !(c.roundId === roundId && c.originatingHole > 0));
+                return { lastInsertRowId: 1 };
+            }
             const [roundId, holeNumber] = args;
             webMock.carryovers = webMock.carryovers.filter(c => !(c.roundId === roundId && c.originatingHole === holeNumber));
+            return { lastInsertRowId: 1 };
+        }
+        if (sql.includes("UPDATE carryovers SET isWon = 0")) {
+            const roundId = args[0];
+            webMock.carryovers.forEach(c => {
+                if (c.roundId === roundId && c.originatingHole === 0) c.isWon = 0;
+            });
             return { lastInsertRowId: 1 };
         }
         if (sql.includes("DELETE FROM rounds")) {
@@ -81,7 +94,21 @@ const webMock = {
             webMock.carryovers = webMock.carryovers.filter(c => c.roundId !== id);
             return { lastInsertRowId: id };
         }
-        if (sql.includes("UPDATE players SET name")) {
+        if (sql.includes("UPDATE players SET")) {
+            // handle simple update name... actual parsing of UPDATE string is hard in mock
+            // Assuming the call is UPDATE players SET name=?, phone=?, email=? WHERE id=?
+            if (sql.includes("name = ?")) {
+                // If it's the full update
+                const [name, phone, email, id] = args;
+                const player = webMock.players.find(p => p.id === id);
+                if (player) {
+                    player.name = name;
+                    player.phone = phone;
+                    player.email = email;
+                }
+                return { lastInsertRowId: id };
+            }
+            // Handle simple name update (legacy calls if any remaining?)
             const [name, id] = args;
             const player = webMock.players.find(p => p.id === id);
             if (player) player.name = name;
@@ -136,14 +163,17 @@ export const initDatabase = async () => {
             PRAGMA journal_mode = WAL;
             CREATE TABLE IF NOT EXISTS players (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE
+                name TEXT NOT NULL,
+                phone TEXT,
+                email TEXT
             );
             CREATE TABLE IF NOT EXISTS rounds (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 totalHoles INTEGER,
                 betAmount REAL,
                 date INTEGER,
-                isCompleted INTEGER DEFAULT 0
+                isCompleted INTEGER DEFAULT 0,
+                useCarryovers INTEGER DEFAULT 1
             );
             CREATE TABLE IF NOT EXISTS participants (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -175,6 +205,11 @@ export const initDatabase = async () => {
         try {
             await db.execAsync("ALTER TABLE rounds ADD COLUMN initialCarryoverAmount REAL DEFAULT 0;");
             await db.execAsync("ALTER TABLE rounds ADD COLUMN initialCarryoverEligibleNames TEXT DEFAULT '[]';");
+            await db.execAsync("ALTER TABLE rounds ADD COLUMN useCarryovers INTEGER DEFAULT 1;");
+
+            // Migration: Add phone and email to players
+            await db.execAsync("ALTER TABLE players ADD COLUMN phone TEXT;");
+            await db.execAsync("ALTER TABLE players ADD COLUMN email TEXT;");
         } catch (e) {
             // Columns likely already exist
         }
@@ -203,13 +238,13 @@ const getDb = async (): Promise<SimpleDb> => {
 };
 
 export const DatabaseService = {
-    async addPlayer(name: string) {
+    async addPlayer(name: string, phone?: string, email?: string) {
         const db = await getDb();
-        return await db.runAsync("INSERT INTO players (name) VALUES (?)", name);
+        return await db.runAsync("INSERT INTO players (name, phone, email) VALUES (?, ?, ?)", name, phone || "", email || "");
     },
-    async updatePlayer(id: number, newName: string) {
+    async updatePlayer(id: number, newName: string, phone?: string, email?: string) {
         const db = await getDb();
-        return await db.runAsync("UPDATE players SET name = ? WHERE id = ?", newName, id);
+        return await db.runAsync("UPDATE players SET name = ?, phone = ?, email = ? WHERE id = ?", newName, phone || "", email || "", id);
     },
     async deletePlayer(id: number) {
         const db = await getDb();
@@ -229,13 +264,14 @@ export const DatabaseService = {
         return await db.getAllAsync<Player>("SELECT * FROM players");
     },
 
-    async createRound(totalHoles: number, betAmount: number) {
+    async createRound(totalHoles: number, betAmount: number, useCarryovers: boolean) {
         const db = await getDb();
         const result = await db.runAsync(
-            "INSERT INTO rounds (totalHoles, betAmount, date) VALUES (?, ?, ?)",
+            "INSERT INTO rounds (totalHoles, betAmount, date, useCarryovers) VALUES (?, ?, ?, ?)",
             totalHoles,
             betAmount,
-            Date.now()
+            Date.now(),
+            useCarryovers ? 1 : 0
         );
         return result.lastInsertRowId;
     },
@@ -250,17 +286,34 @@ export const DatabaseService = {
 
     async getActiveRound() {
         const db = await getDb();
-        return await db.getFirstAsync<Round>("SELECT * FROM rounds WHERE isCompleted = 0 ORDER BY date DESC LIMIT 1");
+        const row = await db.getFirstAsync<any>("SELECT * FROM rounds WHERE isCompleted = 0 ORDER BY date DESC LIMIT 1");
+        if (!row) return null;
+        return {
+            ...row,
+            isCompleted: !!row.isCompleted,
+            useCarryovers: !!row.useCarryovers
+        } as Round;
     },
 
     async getRoundById(id: number) {
         const db = await getDb();
-        return await db.getFirstAsync<Round>("SELECT * FROM rounds WHERE id = ?", id);
+        const row = await db.getFirstAsync<any>("SELECT * FROM rounds WHERE id = ?", id);
+        if (!row) return null;
+        return {
+            ...row,
+            isCompleted: !!row.isCompleted,
+            useCarryovers: !!row.useCarryovers
+        } as Round;
     },
 
     async getAllRounds() {
         const db = await getDb();
-        return await db.getAllAsync<Round>("SELECT * FROM rounds ORDER BY date DESC");
+        const rows = await db.getAllAsync<any>("SELECT * FROM rounds ORDER BY date DESC");
+        return rows.map(r => ({
+            ...r,
+            isCompleted: !!r.isCompleted,
+            useCarryovers: !!r.useCarryovers
+        })) as Round[];
     },
 
     async getFullRoundData(roundId: number) {

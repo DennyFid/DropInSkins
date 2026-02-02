@@ -11,7 +11,9 @@ export const GroupSetupScreen = ({ navigation }: any) => {
     const [showHelp, setShowHelp] = useState(false);
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
-    const [newPlayerName, setNewPlayerName] = useState("");
+    const [editName, setEditName] = useState("");
+    const [editPhone, setEditPhone] = useState("");
+    const [editEmail, setEditEmail] = useState("");
 
     useEffect(() => {
         loadData();
@@ -46,20 +48,22 @@ export const GroupSetupScreen = ({ navigation }: any) => {
 
     const handleEditPlayer = (player: Player) => {
         setEditingPlayer(player);
-        setNewPlayerName(player.name);
+        setEditName(player.name);
+        setEditPhone(player.phone || "");
+        setEditEmail(player.email || "");
         setEditModalVisible(true);
     };
 
     const handleSaveEdit = async () => {
-        if (!editingPlayer || !newPlayerName.trim()) return;
+        if (!editingPlayer || !editName.trim()) return;
 
-        const trimmedName = newPlayerName.trim();
+        const trimmedName = editName.trim();
         if (players.some(p => p.id !== editingPlayer.id && p.name.toLowerCase() === trimmedName.toLowerCase())) {
             Alert.alert("Error", "Player name must be unique");
             return;
         }
 
-        await DatabaseService.updatePlayer(editingPlayer.id!, trimmedName);
+        await DatabaseService.updatePlayer(editingPlayer.id!, trimmedName, editPhone.trim(), editEmail.trim());
         setEditModalVisible(false);
         setEditingPlayer(null);
         loadData();
@@ -211,13 +215,29 @@ export const GroupSetupScreen = ({ navigation }: any) => {
             <Modal visible={editModalVisible} animationType="fade" transparent={true}>
                 <View style={styles.overlay}>
                     <View style={styles.editModal}>
-                        <Text style={styles.editTitle}>Rename Player</Text>
+                        <Text style={styles.editTitle}>Edit Player Details</Text>
                         <TextInput
                             style={styles.editInput}
-                            value={newPlayerName}
-                            onChangeText={setNewPlayerName}
+                            value={editName}
+                            onChangeText={setEditName}
+                            placeholder="Name"
                             autoFocus={true}
                             selectTextOnFocus={true}
+                        />
+                        <TextInput
+                            style={styles.editInput}
+                            value={editPhone}
+                            onChangeText={setEditPhone}
+                            placeholder="Phone (optional)"
+                            keyboardType="phone-pad"
+                        />
+                        <TextInput
+                            style={styles.editInput}
+                            value={editEmail}
+                            onChangeText={setEditEmail}
+                            placeholder="Email (optional)"
+                            keyboardType="email-address"
+                            autoCapitalize="none"
                         />
                         <View style={styles.editActions}>
                             <TouchableOpacity
