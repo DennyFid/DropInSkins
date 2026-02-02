@@ -81,9 +81,25 @@ const webMock = {
             webMock.carryovers = webMock.carryovers.filter(c => c.roundId !== id);
             return { lastInsertRowId: id };
         }
+        if (sql.includes("UPDATE players SET name")) {
+            const [name, id] = args;
+            const player = webMock.players.find(p => p.id === id);
+            if (player) player.name = name;
+            return { lastInsertRowId: id };
+        }
+        if (sql.includes("DELETE FROM players")) {
+            const id = args[0];
+            webMock.players = webMock.players.filter(p => p.id !== id);
+            return { lastInsertRowId: id };
+        }
         return { lastInsertRowId: 1 };
     },
     getAllAsync: async <T>(sql: string, ...args: any[]): Promise<T[]> => {
+        if (sql.includes("SELECT COUNT(*) as count FROM participants WHERE name = ?")) {
+            const name = args[0];
+            const count = webMock.participants.filter(p => p.name === name).length;
+            return [{ count }] as unknown as T[];
+        }
         if (sql.includes("SELECT * FROM players")) return [...webMock.players] as unknown as T[];
         if (sql.includes("SELECT * FROM rounds")) return [...webMock.rounds].sort((a, b) => b.date - a.date) as unknown as T[];
         if (sql.includes("SELECT * FROM participants")) return webMock.participants.filter(p => p.roundId === args[0]) as unknown as T[];
@@ -190,6 +206,22 @@ export const DatabaseService = {
     async addPlayer(name: string) {
         const db = await getDb();
         return await db.runAsync("INSERT INTO players (name) VALUES (?)", name);
+    },
+    async updatePlayer(id: number, newName: string) {
+        const db = await getDb();
+        return await db.runAsync("UPDATE players SET name = ? WHERE id = ?", newName, id);
+    },
+    async deletePlayer(id: number) {
+        const db = await getDb();
+        return await db.runAsync("DELETE FROM players WHERE id = ?", id);
+    },
+    async isPlayerReferenced(name: string) {
+        const db = await getDb();
+        const rows = await db.getAllAsync<{ count: number }>(
+            "SELECT COUNT(*) as count FROM participants WHERE name = ?",
+            name
+        );
+        return rows[0].count > 0;
     },
 
     async getAllPlayers() {

@@ -3,15 +3,25 @@ import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, 
 import { DatabaseService } from "../../data/database";
 import { Round, Participant, HoleResult, Carryover } from "../../types";
 import { RoundCalculator } from "../../domain/RoundCalculator";
+import { ReportService } from "../../services/ReportService";
 import { ScrollView } from "react-native";
 
 export const HistoryScreen = ({ navigation }: any) => {
     const [rounds, setRounds] = useState<Round[]>([]);
     const [filteredRounds, setFilteredRounds] = useState<Round[]>([]);
     const [loading, setLoading] = useState(true);
-    const currentYear = new Date().getFullYear();
-    const [startDate, setStartDate] = useState(`${currentYear}-01-01`);
-    const [endDate, setEndDate] = useState(`${currentYear}-12-31`);
+    const [exportLoading, setExportLoading] = useState(false);
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(now.getDate() - 30);
+
+    const formatForDisplay = (d: Date) => {
+        return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
+    };
+
+    const [startDate, setStartDate] = useState(formatForDisplay(thirtyDaysAgo));
+    const [endDate, setEndDate] = useState(formatForDisplay(now));
     const [viewMode, setViewMode] = useState<'rounds' | 'report'>('rounds');
     const [reportData, setReportData] = useState<{
         players: string[],
@@ -51,7 +61,7 @@ export const HistoryScreen = ({ navigation }: any) => {
                 );
 
                 const d = new Date(round.date);
-                const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+                const dateStr = formatForDisplay(d);
 
                 reportGames.push({
                     id: round.id!,
@@ -92,16 +102,35 @@ export const HistoryScreen = ({ navigation }: any) => {
         }
     };
 
+    const parseDate = (str: string) => {
+        if (!str) return null;
+        // Parse m[m]/d[d]/yy[yy] or m[m]-d[d]-yy[yy]
+        const parts = str.split(/[-/]/);
+        if (parts.length !== 3) return null;
+        let [m, d, y] = parts.map(p => parseInt(p, 10));
+        if (isNaN(m) || isNaN(d) || isNaN(y)) return null;
+
+        // Handle 2-digit years (assume 20xx)
+        if (y < 100) y += 2000;
+
+        const date = new Date(y, m - 1, d);
+        return isNaN(date.getTime()) ? null : date;
+    };
+
     const filterRounds = () => {
         let filtered = [...rounds];
+        const start = parseDate(startDate);
+        const end = parseDate(endDate);
+
+        // Adjust end date to end of day if it exists
+        if (end) {
+            end.setHours(23, 59, 59, 999);
+        }
 
         filtered = filtered.filter(r => {
-            const d = new Date(r.date);
-            const localDateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-
-            if (startDate && localDateStr < startDate) return false;
-            if (endDate && localDateStr > endDate) return false;
-
+            const rd = new Date(r.date);
+            if (start && rd < start) return false;
+            if (end && rd > end) return false;
             return true;
         });
 
@@ -136,28 +165,47 @@ export const HistoryScreen = ({ navigation }: any) => {
 
     const formatDate = (timestamp: number) => {
         const d = new Date(timestamp);
-        return d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const datePart = formatForDisplay(d);
+        const timePart = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return `${datePart} ${timePart}`;
     };
 
     if (loading) return <ActivityIndicator size="large" style={styles.centered} />;
 
     return (
         <View style={styles.container}>
-            <Text style={styles.title}>All Rounds</Text>
+            <View style={styles.headerRow}>
+                <Text style={styles.title}>All Rounds</Text>
+                <TouchableOpacity
+                    style={[styles.shareBtn, exportLoading && styles.disabledShareBtn]}
+                    onPress={async () => {
+                        setExportLoading(true);
+                        await ReportService.generateAndShareReport();
+                        setExportLoading(false);
+                    }}
+                    disabled={exportLoading}
+                >
+                    {exportLoading ? (
+                        <ActivityIndicator size="small" color="#007AFF" />
+                    ) : (
+                        <Text style={styles.shareBtnText}>📤 Share Report</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
 
             <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Filter by Date</Text>
                 <View style={styles.dateInputs}>
                     <TextInput
                         style={styles.dateInput}
-                        placeholder="YYYY-MM-DD"
+                        placeholder="MM/DD/YYYY"
                         value={startDate}
                         onChangeText={setStartDate}
                     />
                     <Text style={styles.toText}>to</Text>
                     <TextInput
                         style={styles.dateInput}
-                        placeholder="YYYY-MM-DD"
+                        placeholder="MM/DD/YYYY"
                         value={endDate}
                         onChangeText={setEndDate}
                     />
@@ -269,7 +317,11 @@ export const HistoryScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
     container: { flex: 1, padding: 20, backgroundColor: "#f9f9f9" },
     centered: { flex: 1, justifyContent: "center" },
-    title: { fontSize: 24, fontWeight: "bold", marginBottom: 20 },
+    headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    title: { fontSize: 24, fontWeight: "bold", marginBottom: 0 },
+    shareBtn: { padding: 10, backgroundColor: '#fff', borderRadius: 8, elevation: 1, borderWidth: 1, borderColor: '#eee' },
+    shareBtnText: { color: '#007AFF', fontWeight: 'bold' },
+    disabledShareBtn: { opacity: 0.5 },
     filterSection: { backgroundColor: '#fff', padding: 15, borderRadius: 12, marginBottom: 20, elevation: 1 },
     sectionTitle: { fontSize: 14, color: '#666', marginBottom: 10, fontWeight: '600' },
     dateInputs: { flexDirection: 'row', alignItems: 'center', gap: 10 },

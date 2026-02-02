@@ -18,10 +18,13 @@ export const RoundSetupScreen = ({ navigation }: any) => {
         const players = await DatabaseService.getAllPlayers();
         setAvailablePlayers(players);
 
-        // Check for carryovers from last round
+        // Check for defaults and carryovers from last round
         const rounds = await DatabaseService.getAllRounds();
         const lastRound = rounds[0];
+
         if (lastRound && lastRound.id) {
+            setHoles(String(lastRound.totalHoles));
+            setBet(String(lastRound.betAmount));
             const cos = await DatabaseService.getCarryovers(lastRound.id);
             if (cos.length > 0) {
                 setLastRoundCOs(cos);

@@ -141,7 +141,7 @@ const styles = StyleSheet.create({
     historyCard: { backgroundColor: '#fdfdfd', borderWidth: 1, borderColor: '#eee', borderRadius: 10, padding: 15, marginBottom: 15 },
     historyCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0', paddingBottom: 5 },
     holeTitle: { fontSize: 16, fontWeight: 'bold' },
-    outcomeText: { fontSize: 12, fontWeight: '600' },
+    outcomeText: { fontSize: 16, fontWeight: '700' },
     tieText: { color: '#FF9500' },
     winnerText: { color: '#4CD964' },
     scoresGrid: { flexDirection: 'row', flexWrap: 'wrap' },

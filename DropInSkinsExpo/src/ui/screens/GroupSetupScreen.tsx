@@ -9,6 +9,9 @@ export const GroupSetupScreen = ({ navigation }: any) => {
     const [players, setPlayers] = useState<Player[]>([]);
     const [pendingCO, setPendingCO] = useState<{ amount: number, count: number } | null>(null);
     const [showHelp, setShowHelp] = useState(false);
+    const [editModalVisible, setEditModalVisible] = useState(false);
+    const [editingPlayer, setEditingPlayer] = useState<Player | null>(null);
+    const [newPlayerName, setNewPlayerName] = useState("");
 
     useEffect(() => {
         loadData();
@@ -39,6 +42,54 @@ export const GroupSetupScreen = ({ navigation }: any) => {
         await DatabaseService.addPlayer(playerName.trim());
         setPlayerName("");
         loadData();
+    };
+
+    const handleEditPlayer = (player: Player) => {
+        setEditingPlayer(player);
+        setNewPlayerName(player.name);
+        setEditModalVisible(true);
+    };
+
+    const handleSaveEdit = async () => {
+        if (!editingPlayer || !newPlayerName.trim()) return;
+
+        const trimmedName = newPlayerName.trim();
+        if (players.some(p => p.id !== editingPlayer.id && p.name.toLowerCase() === trimmedName.toLowerCase())) {
+            Alert.alert("Error", "Player name must be unique");
+            return;
+        }
+
+        await DatabaseService.updatePlayer(editingPlayer.id!, trimmedName);
+        setEditModalVisible(false);
+        setEditingPlayer(null);
+        loadData();
+    };
+
+    const handleDeletePlayer = async (player: Player) => {
+        const hasHistory = await DatabaseService.isPlayerReferenced(player.name);
+        if (hasHistory) {
+            Alert.alert(
+                "Cannot Delete",
+                `${player.name} has history in past rounds and cannot be deleted.`
+            );
+            return;
+        }
+
+        Alert.alert(
+            "Delete Player",
+            `Are you sure you want to delete ${player.name}?`,
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        await DatabaseService.deletePlayer(player.id!);
+                        loadData();
+                    }
+                }
+            ]
+        );
     };
 
     return (
@@ -74,6 +125,14 @@ export const GroupSetupScreen = ({ navigation }: any) => {
                 renderItem={({ item }) => (
                     <View style={styles.playerRow}>
                         <Text style={styles.playerName}>{item.name}</Text>
+                        <View style={styles.playerActions}>
+                            <TouchableOpacity onPress={() => handleEditPlayer(item)} style={styles.actionBtn}>
+                                <Text style={styles.actionEmoji}>✏️</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => handleDeletePlayer(item)} style={styles.actionBtn}>
+                                <Text style={styles.actionEmoji}>🗑️</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 )}
                 style={styles.list}
@@ -148,6 +207,35 @@ export const GroupSetupScreen = ({ navigation }: any) => {
                     </ScrollView>
                 </View>
             </Modal>
+
+            <Modal visible={editModalVisible} animationType="fade" transparent={true}>
+                <View style={styles.overlay}>
+                    <View style={styles.editModal}>
+                        <Text style={styles.editTitle}>Rename Player</Text>
+                        <TextInput
+                            style={styles.editInput}
+                            value={newPlayerName}
+                            onChangeText={setNewPlayerName}
+                            autoFocus={true}
+                            selectTextOnFocus={true}
+                        />
+                        <View style={styles.editActions}>
+                            <TouchableOpacity
+                                style={[styles.editBtn, styles.cancelBtn]}
+                                onPress={() => setEditModalVisible(false)}
+                            >
+                                <Text style={styles.editBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.editBtn, styles.saveBtn]}
+                                onPress={handleSaveEdit}
+                            >
+                                <Text style={styles.editBtnText}>Save</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -162,8 +250,18 @@ const styles = StyleSheet.create({
     inputContainer: { flexDirection: "row", marginBottom: 20 },
     input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 5, padding: 10, marginRight: 10 },
     list: { flex: 1, marginBottom: 20 },
-    playerRow: { padding: 15, borderBottomWidth: 1, borderBottomColor: "#eee" },
-    playerName: { fontSize: 18 },
+    playerRow: {
+        padding: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: "#eee",
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+    },
+    playerName: { fontSize: 18, flex: 1 },
+    playerActions: { flexDirection: 'row' },
+    actionBtn: { marginLeft: 15, padding: 5 },
+    actionEmoji: { fontSize: 20 },
     mainBtn: { backgroundColor: '#007AFF', padding: 15, borderRadius: 10, alignItems: 'center' },
     mainBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
     disabledBtn: { backgroundColor: '#ccc' },
@@ -179,5 +277,14 @@ const styles = StyleSheet.create({
     sectionBody: { fontSize: 15, color: '#666', lineHeight: 22 },
     closeBtn: { marginTop: 20, backgroundColor: '#007AFF', padding: 15, borderRadius: 10, alignItems: 'center' },
     closeBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-    versionText: { marginTop: 30, textAlign: 'center', color: '#999', fontSize: 12, marginBottom: 20 }
+    versionText: { marginTop: 30, textAlign: 'center', color: '#999', fontSize: 12, marginBottom: 20 },
+    overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center' },
+    editModal: { backgroundColor: '#fff', padding: 20, borderRadius: 15, width: '80%', elevation: 5 },
+    editTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+    editInput: { borderWidth: 1, borderColor: '#ccc', borderRadius: 5, padding: 10, marginBottom: 20, fontSize: 18 },
+    editActions: { flexDirection: 'row', justifyContent: 'space-between' },
+    editBtn: { flex: 1, padding: 12, borderRadius: 8, alignItems: 'center', marginHorizontal: 5 },
+    cancelBtn: { backgroundColor: '#FF3B30' },
+    saveBtn: { backgroundColor: '#007AFF' },
+    editBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
 });
