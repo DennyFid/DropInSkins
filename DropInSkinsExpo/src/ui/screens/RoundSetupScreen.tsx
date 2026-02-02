@@ -1,0 +1,143 @@
+import React, { useState, useEffect } from "react";
+import { View, Text, TextInput, Button, StyleSheet, FlatList, TouchableOpacity } from "react-native";
+import { DatabaseService } from "../../data/database";
+import { Player } from "../../types";
+
+export const RoundSetupScreen = ({ navigation }: any) => {
+    const [holes, setHoles] = useState("9");
+    const [bet, setBet] = useState("0.01");
+    const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
+    const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<number>>(new Set());
+    const [lastRoundCOs, setLastRoundCOs] = useState<Carryover[]>([]);
+
+    useEffect(() => {
+        loadData();
+    }, []);
+
+    const loadData = async () => {
+        const players = await DatabaseService.getAllPlayers();
+        setAvailablePlayers(players);
+
+        // Check for carryovers from last round
+        const rounds = await DatabaseService.getAllRounds();
+        const lastRound = rounds[0];
+        if (lastRound && lastRound.id) {
+            const cos = await DatabaseService.getCarryovers(lastRound.id);
+            if (cos.length > 0) {
+                setLastRoundCOs(cos);
+            }
+        }
+    };
+
+    const togglePlayerSelection = (id: number) => {
+        setSelectedPlayerIds(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(id)) newSet.delete(id);
+            else newSet.add(id);
+            return newSet;
+        });
+    };
+
+    const handleStart = async () => {
+        const roundId = await DatabaseService.createRound(
+            parseInt(holes, 10),
+            parseFloat(bet)
+        );
+
+        // Inherit carryovers - save them individually as Hole 0 COs for the new round
+        for (const co of lastRoundCOs) {
+            await DatabaseService.saveCarryover(
+                Number(roundId),
+                0,
+                co.amount,
+                co.eligibleParticipantNames
+            );
+        }
+
+        // Add selected players as participants starting on hole 1
+        for (const id of selectedPlayerIds) {
+            const player = availablePlayers.find(p => p.id === id);
+            if (player) {
+                await DatabaseService.addParticipant(Number(roundId), player.name, 1);
+            }
+        }
+
+        navigation.navigate("Scoring", { roundId });
+    };
+
+    return (
+        <View style={styles.container}>
+            <Text style={styles.title}>Round Setup</Text>
+
+            <View style={styles.row}>
+                <View style={styles.flex1}>
+                    <Text style={styles.label}>Holes</Text>
+                    <TextInput
+                        style={styles.input}
+                        keyboardType="numeric"
+                        value={holes}
+                        onChangeText={setHoles}
+                    />
+                </View>
+                <View style={styles.flex1}>
+                    <Text style={styles.label}>Bet ($)</Text>
+                    <TextInput
+                        style={styles.input}
+                        keyboardType="numeric"
+                        value={bet}
+                        onChangeText={setBet}
+                    />
+                </View>
+            </View>
+
+            {lastRoundCOs.length > 0 && (
+                <View style={styles.coInfo}>
+                    <Text style={styles.coText}>
+                        💱 Carrying over ${lastRoundCOs.reduce((sum, co) => sum + co.amount * co.eligibleParticipantNames.length, 0).toFixed(2)} from previous round!
+                    </Text>
+                </View>
+            )}
+
+            <Text style={styles.label}>Select Starting Players</Text>
+            <FlatList
+                data={availablePlayers}
+                keyExtractor={(item) => item.id?.toString() || item.name}
+                renderItem={({ item }) => (
+                    <TouchableOpacity
+                        style={[
+                            styles.playerItem,
+                            (item.id !== undefined && selectedPlayerIds.has(item.id)) ? styles.selectedPlayerItem : undefined
+                        ]}
+                        onPress={() => item.id !== undefined && togglePlayerSelection(item.id)}
+                    >
+                        <Text style={[
+                            styles.playerName,
+                            (item.id !== undefined && selectedPlayerIds.has(item.id)) ? styles.selectedPlayerName : undefined
+                        ]}>
+                            {item.name}
+                        </Text>
+                    </TouchableOpacity>
+                )}
+                style={styles.list}
+            />
+
+            <Button title="Start Round" onPress={handleStart} disabled={selectedPlayerIds.size === 0} />
+        </View>
+    );
+};
+
+const styles = StyleSheet.create({
+    container: { flex: 1, padding: 20, backgroundColor: "#fff" },
+    title: { fontSize: 24, fontWeight: "bold", marginBottom: 20 },
+    label: { fontSize: 16, marginBottom: 5, fontWeight: "600" },
+    input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 5, padding: 10, marginBottom: 20 },
+    row: { flexDirection: "row", gap: 10 },
+    flex1: { flex: 1 },
+    list: { flex: 1, marginVertical: 10 },
+    playerItem: { padding: 15, borderBottomWidth: 1, borderBottomColor: "#eee" },
+    selectedPlayerItem: { backgroundColor: "#007AFF" },
+    playerName: { fontSize: 18 },
+    selectedPlayerName: { color: "#fff", fontWeight: "bold" },
+    coInfo: { backgroundColor: '#FFF9C4', padding: 10, borderRadius: 8, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: '#FBC02D' },
+    coText: { color: '#7B5E00', fontWeight: 'bold', fontSize: 14 }
+});
