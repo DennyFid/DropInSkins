@@ -28,6 +28,14 @@ export class RoundCalculator {
         if (initialCOs.length > 0) {
             console.log(`[RoundCalc] Seeding ${initialCOs.length} inherited carryovers:`, initialCOs);
             currentOutstandingCOs.push(...initialCOs);
+
+            // Deduct the value of inherited carryovers from eligible participants' start balances
+            // so that the simulation "funds" the starting pot.
+            initialCOs.forEach(co => {
+                co.eligibleParticipantNames.forEach(name => {
+                    balanceBoard[name] = (balanceBoard[name] || 0) - co.amount;
+                });
+            });
         }
 
         const sortedResults = [...holeResults].sort((a, b) => a.holeNumber - b.holeNumber);
@@ -52,7 +60,8 @@ export class RoundCalculator {
             );
 
             if (outcome.type === "Winner") {
-                const skinCount = Math.round(outcome.totalWon / round.betAmount);
+                // Skin count is 1 (the hole itself) + any claimed carryover holes
+                const skinCount = 1 + outcome.claimedCarryoverIds.length;
                 skinsBoard[outcome.winnerName] = (skinsBoard[outcome.winnerName] || 0) + skinCount;
 
                 // Winner takes the hole pot (sum of all active participants' bets for this hole)
@@ -91,6 +100,17 @@ export class RoundCalculator {
                 }
             }
         });
+
+        // Final adjustment: If the round is completed, unsettled carryovers are effectively 
+        // "refunded" to ensure the total Net balances sum to zero.
+        if (round.isCompleted) {
+            console.log(`[RoundCalc] Round finished with ${currentOutstandingCOs.length} unsettled carryovers. Refunding...`);
+            currentOutstandingCOs.forEach(co => {
+                co.eligibleParticipantNames.forEach(name => {
+                    balanceBoard[name] = (balanceBoard[name] || 0) + co.amount;
+                });
+            });
+        }
 
         return { leaderboard: skinsBoard, balances: balanceBoard };
     }

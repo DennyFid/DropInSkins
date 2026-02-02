@@ -20,19 +20,23 @@ export const useScoring = (roundId: number) => {
 
     const loadData = async () => {
         setLoading(true);
-        const r = await DatabaseService.getRoundById(roundId);
-        if (r) setRound(r);
+        try {
+            const r = await DatabaseService.getRoundById(roundId);
+            if (r) setRound(r);
 
-        const parts = await DatabaseService.getParticipants(roundId);
-        setParticipants(parts);
+            const parts = await DatabaseService.getParticipants(roundId);
+            setParticipants(parts);
 
-        const results = await DatabaseService.getHoleResults(roundId);
-        setHoleResults(results);
+            const results = await DatabaseService.getHoleResults(roundId);
+            setHoleResults(results);
 
-        const cos = await DatabaseService.getRoundHistoryCarryovers(roundId);
-        setCarryovers(cos);
-
-        setLoading(false);
+            const cos = await DatabaseService.getRoundHistoryCarryovers(roundId);
+            setCarryovers(cos);
+        } catch (error) {
+            console.error("[useScoring] Error loading data:", error);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const [leaderboard, setLeaderboard] = useState<Record<string, number>>({});
@@ -53,78 +57,86 @@ export const useScoring = (roundId: number) => {
     }, [holeResults, participants, round, carryovers]);
 
     const joinRound = async (name: string) => {
-        await DatabaseService.addParticipant(roundId, name, currentHole);
-        await loadData();
+        try {
+            await DatabaseService.addParticipant(roundId, name, currentHole);
+            await loadData();
+        } catch (error) {
+            console.error("[useScoring] Error joining round:", error);
+        }
     };
 
     const leaveRound = async (participantId: number) => {
-        await DatabaseService.updateParticipantEndHole(participantId, currentHole - 1);
-        await loadData();
+        try {
+            await DatabaseService.updateParticipantEndHole(participantId, currentHole - 1);
+            await loadData();
+        } catch (error) {
+            console.error("[useScoring] Error leaving round:", error);
+        }
     };
 
     const submitScore = async (scores: Record<string, number>) => {
         if (!round) return;
 
-        // 1. Delete old data for this hole to allow re-scoring
-        await DatabaseService.deleteHoleData(roundId, currentHole);
+        try {
+            // 1. Delete old data for this hole to allow re-scoring
+            await DatabaseService.deleteHoleData(roundId, currentHole);
 
-        // 2. Fetch ALL carryovers (including won ones) to simulate context UP TO this hole
-        // This ensures the engine knows about COs that WERE available at this point in time
-        const allCOs = await DatabaseService.getRoundHistoryCarryovers(roundId);
+            // 2. Fetch ALL carryovers (including won ones) to simulate context UP TO this hole
+            const allCOs = await DatabaseService.getRoundHistoryCarryovers(roundId);
 
-        // Simulating history to find COs available AT currentHole
-        let currentPool: Carryover[] = [];
+            // Simulating history to find COs available AT currentHole
+            let currentPool: Carryover[] = [];
 
-        // Seed with initial carryover from database if it exists
-        // Note: we use allCOs here because we need to know if it existed, 
-        // even if it was won later (the engine simulation needs the progression)
-        const initialCOs = allCOs.filter(c => c.originatingHole === 0);
-        if (initialCOs.length > 0) {
-            currentPool.push(...initialCOs);
-        }
+            const initialCOs = allCOs.filter(c => c.originatingHole === 0);
+            if (initialCOs.length > 0) {
+                currentPool.push(...initialCOs);
+            }
 
-        const sortedResults = [...holeResults]
-            .filter(r => r.holeNumber < currentHole)
-            .sort((a, b) => a.holeNumber - b.holeNumber);
+            const sortedResults = [...holeResults]
+                .filter(r => r.holeNumber < currentHole)
+                .sort((a, b) => a.holeNumber - b.holeNumber);
 
-        sortedResults.forEach(res => {
-            const activeParts = participants.filter(p =>
-                res.holeNumber >= p.startHole && (p.endHole === null || res.holeNumber <= p.endHole)
+            sortedResults.forEach(res => {
+                const activeParts = participants.filter(p =>
+                    res.holeNumber >= p.startHole && (p.endHole === null || res.holeNumber <= p.endHole)
+                );
+                const outcome = engine.calculateHole(res.holeNumber, res.participantScores, activeParts, currentPool, round.betAmount);
+                if (outcome.type === "Winner") {
+                    currentPool = currentPool.filter(co => !outcome.claimedCarryoverIds.includes(co.id || -1));
+                } else if (outcome.type === "CarryoverCreated") {
+                    const dbCOs = allCOs.filter(c => c.originatingHole === res.holeNumber);
+                    if (dbCOs.length > 0) currentPool.push(...dbCOs);
+                }
+            });
+
+            const activeParts = participants.filter(p => {
+                return currentHole >= p.startHole && (p.endHole === null || currentHole <= p.endHole);
+            });
+
+            const outcome = engine.calculateHole(
+                currentHole,
+                scores,
+                activeParts,
+                currentPool,
+                round.betAmount
             );
-            const outcome = engine.calculateHole(res.holeNumber, res.participantScores, activeParts, currentPool, round.betAmount);
+
             if (outcome.type === "Winner") {
-                currentPool = currentPool.filter(co => !outcome.claimedCarryoverIds.includes(co.id || -1));
+                await DatabaseService.saveHoleResult(roundId, currentHole, scores);
+                for (const coId of outcome.claimedCarryoverIds) {
+                    await DatabaseService.markCarryoverAsWon(coId);
+                }
             } else if (outcome.type === "CarryoverCreated") {
-                const dbCOs = allCOs.filter(c => c.originatingHole === res.holeNumber);
-                if (dbCOs.length > 0) currentPool.push(...dbCOs);
+                await DatabaseService.saveHoleResult(roundId, currentHole, scores);
+                await DatabaseService.saveCarryover(roundId, currentHole, outcome.amount, outcome.eligibleNames);
             }
-        });
 
-        const activeParts = participants.filter(p => {
-            return currentHole >= p.startHole && (p.endHole === null || currentHole <= p.endHole);
-        });
-
-        const outcome = engine.calculateHole(
-            currentHole,
-            scores,
-            activeParts,
-            currentPool,
-            round.betAmount
-        );
-
-        if (outcome.type === "Winner") {
-            await DatabaseService.saveHoleResult(roundId, currentHole, scores);
-            for (const coId of outcome.claimedCarryoverIds) {
-                await DatabaseService.markCarryoverAsWon(coId);
+            await loadData();
+            if (currentHole < round.totalHoles) {
+                setCurrentHole(prev => prev + 1);
             }
-        } else if (outcome.type === "CarryoverCreated") {
-            await DatabaseService.saveHoleResult(roundId, currentHole, scores);
-            await DatabaseService.saveCarryover(roundId, currentHole, outcome.amount, outcome.eligibleNames);
-        }
-
-        await loadData();
-        if (currentHole < round.totalHoles) {
-            setCurrentHole(prev => prev + 1);
+        } catch (error) {
+            console.error("[useScoring] Error submitting score:", error);
         }
     };
 

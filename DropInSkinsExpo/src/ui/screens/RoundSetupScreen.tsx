@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, Text, TextInput, Button, StyleSheet, FlatList, TouchableOpacity } from "react-native";
 import { DatabaseService } from "../../data/database";
-import { Player } from "../../types";
+import { Player, Carryover } from "../../types";
 
 export const RoundSetupScreen = ({ navigation }: any) => {
     const [holes, setHoles] = useState("9");
@@ -93,7 +93,7 @@ export const RoundSetupScreen = ({ navigation }: any) => {
             {lastRoundCOs.length > 0 && (
                 <View style={styles.coInfo}>
                     <Text style={styles.coText}>
-                        💱 Carrying over ${lastRoundCOs.reduce((sum, co) => sum + co.amount * co.eligibleParticipantNames.length, 0).toFixed(2)} from previous round!
+                        💱 {lastRoundCOs.length} Carryover Skins from previous round!
                     </Text>
                 </View>
             )}
@@ -121,7 +121,13 @@ export const RoundSetupScreen = ({ navigation }: any) => {
                 style={styles.list}
             />
 
-            <Button title="Start Round" onPress={handleStart} disabled={selectedPlayerIds.size === 0} />
+            <TouchableOpacity
+                style={[styles.mainBtn, selectedPlayerIds.size === 0 && styles.disabledBtn]}
+                onPress={handleStart}
+                disabled={selectedPlayerIds.size === 0}
+            >
+                <Text style={styles.mainBtnText}>Start Round</Text>
+            </TouchableOpacity>
         </View>
     );
 };
@@ -138,6 +144,9 @@ const styles = StyleSheet.create({
     selectedPlayerItem: { backgroundColor: "#007AFF" },
     playerName: { fontSize: 18 },
     selectedPlayerName: { color: "#fff", fontWeight: "bold" },
+    mainBtn: { backgroundColor: '#007AFF', padding: 15, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+    mainBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+    disabledBtn: { backgroundColor: '#ccc' },
     coInfo: { backgroundColor: '#FFF9C4', padding: 10, borderRadius: 8, marginBottom: 20, borderLeftWidth: 4, borderLeftColor: '#FBC02D' },
     coText: { color: '#7B5E00', fontWeight: 'bold', fontSize: 14 }
 });

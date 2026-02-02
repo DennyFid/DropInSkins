@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, TextInput, Button, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList } from "react-native";
+import { View, Text, TextInput, Button, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Modal, FlatList, Keyboard } from "react-native";
 import { useScoring } from "../../hooks/useScoring";
 import { DatabaseService } from "../../data/database";
 import { Player } from "../../types";
@@ -28,6 +28,7 @@ export const ScoringScreen = ({ route, navigation }: any) => {
     const [scores, setScores] = useState<Record<string, string>>({});
     const [allPlayers, setAllPlayers] = useState<Player[]>([]);
     const [showManageModal, setShowManageModal] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
 
     useEffect(() => {
         DatabaseService.getAllPlayers().then(setAllPlayers);
@@ -56,16 +57,23 @@ export const ScoringScreen = ({ route, navigation }: any) => {
         setScores(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = () => {
-        const numericScores: Record<string, number> = {};
-        Object.entries(scores).forEach(([name, val]) => {
-            const parsed = parseInt(val, 10);
-            if (!isNaN(parsed) && parsed > 0) {
-                numericScores[name] = parsed;
-            }
-        });
-        submitScore(numericScores);
-        setScores({});
+    const handleSubmit = async () => {
+        if (submitting) return;
+        Keyboard.dismiss();
+        setSubmitting(true);
+        try {
+            const numericScores: Record<string, number> = {};
+            Object.entries(scores).forEach(([name, val]) => {
+                const parsed = parseInt(val, 10);
+                if (!isNaN(parsed) && parsed > 0) {
+                    numericScores[name] = parsed;
+                }
+            });
+            await submitScore(numericScores);
+            setScores({});
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     const activeParticipants = participants.filter(p => {
@@ -77,17 +85,20 @@ export const ScoringScreen = ({ route, navigation }: any) => {
     );
 
     const relevantCOs = carryovers.filter(c => c.originatingHole < currentHole && c.isWon === 0);
-    const totalCarryoverAmount = relevantCOs.reduce((sum, co) => sum + co.amount, 0);
-    const totalSkinValue = (round?.betAmount || 0) + totalCarryoverAmount;
-    const outstandingSkinsCount = Math.round(totalCarryoverAmount / (round?.betAmount || 1));
+    const totalCarryoverCashValue = relevantCOs.reduce((sum, co) => sum + (co.amount * co.eligibleParticipantNames.length), 0);
+    const currentHolePot = activeParticipants.length * (round?.betAmount || 0);
+    const totalPotValue = currentHolePot + totalCarryoverCashValue;
+
+    const outstandingSkinsCount = relevantCOs.length;
+    const totalSkinsAtStake = 1 + outstandingSkinsCount;
 
     return (
         <View style={{ flex: 1 }}>
-            <ScrollView style={styles.container}>
+            <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
                 <View style={styles.header}>
                     <View>
                         <Text style={styles.title}>Hole {currentHole}</Text>
-                        <Text style={styles.subtitle}>Par 4 - {totalSkinValue}$ Skin</Text>
+                        <Text style={styles.subtitle}>{totalSkinsAtStake} Skins at stake</Text>
                         {outstandingSkinsCount > 0 && (
                             <Text style={styles.coIndicator}>{outstandingSkinsCount} Outstanding Carryover(s)</Text>
                         )}
@@ -123,29 +134,70 @@ export const ScoringScreen = ({ route, navigation }: any) => {
                 )}
 
                 <View style={styles.buttonRow}>
-                    <Button title="Previous" onPress={() => setCurrentHole(h => Math.max(1, h - 1))} />
+                    <TouchableOpacity
+                        style={[styles.sideBtn, styles.prevBtn]}
+                        onPress={() => setCurrentHole(h => Math.max(1, h - 1))}
+                    >
+                        <Text style={styles.sideBtnText}>Previous</Text>
+                    </TouchableOpacity>
+
                     {jumpToHole ? (
-                        <Button title="Save & Return" onPress={() => { handleSubmit(); navigation.goBack(); }} />
+                        <TouchableOpacity
+                            style={[styles.sideBtn, styles.nextBtn]}
+                            onPress={async () => { await handleSubmit(); navigation.goBack(); }}
+                        >
+                            <Text style={styles.sideBtnText}>Save & Return</Text>
+                        </TouchableOpacity>
                     ) : (
-                        <Button title="Next Hole" onPress={handleSubmit} disabled={activeParticipants.length === 0} />
+                        <TouchableOpacity
+                            style={[styles.sideBtn, styles.nextBtn, (activeParticipants.length === 0 || submitting) && styles.disabledBtn]}
+                            onPress={handleSubmit}
+                            disabled={activeParticipants.length === 0 || submitting}
+                        >
+                            {submitting ? (
+                                <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                                <Text style={styles.sideBtnText}>Next Hole</Text>
+                            )}
+                        </TouchableOpacity>
                     )}
                 </View>
 
-                {currentHole === round?.totalHoles && !jumpToHole && (
-                    <Button
-                        title={round.isCompleted ? "Resave Round" : "Finish and Save Round"}
-                        color="green"
+                {currentHole === round?.totalHoles && !jumpToHole && !round?.isCompleted && (
+                    <TouchableOpacity
+                        style={[styles.finishBtn, submitting && styles.disabledBtn]}
+                        disabled={submitting}
                         onPress={async () => {
-                            handleSubmit(); // Save the final hole's scores
-                            if (!round.isCompleted) {
-                                await DatabaseService.completeRound(roundId);
-                            }
+                            await handleSubmit(); // Save the final hole's scores
+                            await DatabaseService.completeRound(roundId);
                             navigation.navigate("Stats", { roundId });
                         }}
-                    />
+                    >
+                        <Text style={styles.finishBtnText}>Finish and Save Round</Text>
+                    </TouchableOpacity>
                 )}
 
-                <Button title="View Stats" onPress={() => navigation.navigate("Stats", { roundId })} />
+                {/* Early Finish Button - Available if at least one hole is scored and round is not yet finished */}
+                {round && !round.isCompleted && !jumpToHole && holeResults.length > 0 && currentHole < round.totalHoles && (
+                    <TouchableOpacity
+                        style={[styles.finishBtn, { backgroundColor: '#FF9500' }, submitting && styles.disabledBtn]}
+                        disabled={submitting}
+                        onPress={async () => {
+                            await handleSubmit();
+                            await DatabaseService.completeRound(roundId);
+                            navigation.navigate("Stats", { roundId });
+                        }}
+                    >
+                        <Text style={styles.finishBtnText}>End Round Early</Text>
+                    </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                    style={styles.statsBtn}
+                    onPress={() => navigation.navigate("Stats", { roundId })}
+                >
+                    <Text style={styles.statsBtnText}>View Stats</Text>
+                </TouchableOpacity>
             </ScrollView>
 
             <Modal visible={showManageModal} animationType="slide" transparent={false}>
@@ -177,7 +229,7 @@ export const ScoringScreen = ({ route, navigation }: any) => {
                     </TouchableOpacity>
                 </View>
             </Modal>
-        </View>
+        </View >
     );
 };
 
@@ -196,7 +248,16 @@ const styles = StyleSheet.create({
     playerName: { fontSize: 18, fontWeight: '500' },
     skinCount: { fontSize: 18, fontWeight: 'bold', color: '#007AFF', textAlign: 'center' },
     input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 5, padding: 8, width: 80, textAlign: "center", fontSize: 18 },
-    buttonRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 30 },
+    buttonRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 30, gap: 10 },
+    sideBtn: { flex: 1, padding: 15, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    prevBtn: { backgroundColor: '#8E8E93' },
+    nextBtn: { backgroundColor: '#007AFF' },
+    sideBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+    disabledBtn: { backgroundColor: '#ccc' },
+    finishBtn: { backgroundColor: '#28A745', padding: 15, borderRadius: 10, alignItems: 'center', marginBottom: 10 },
+    finishBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+    statsBtn: { padding: 10, alignItems: 'center' },
+    statsBtnText: { color: '#007AFF', fontSize: 16, fontWeight: '500' },
     noPlayers: { textAlign: 'center', marginTop: 50, color: '#999', fontSize: 16 },
     modalContainer: { flex: 1, padding: 40, backgroundColor: '#f9f9f9' },
     modalTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 30 },

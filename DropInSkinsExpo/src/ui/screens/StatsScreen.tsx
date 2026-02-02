@@ -38,7 +38,7 @@ export const StatsScreen = ({ route, navigation }: any) => {
                 <View>
                     <Text style={styles.title}>Round Summary</Text>
                     <Text style={styles.subtitle}>
-                        Bet: ${round?.betAmount} per skin | {round?.totalHoles} Holes
+                        {holeResults.length} Holes Played | Bet: ${round?.betAmount} per skin
                     </Text>
                 </View>
                 <TouchableOpacity style={styles.historyBtn} onPress={() => navigation.navigate("History")}>

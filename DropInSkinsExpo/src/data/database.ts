@@ -4,6 +4,7 @@ import { Round, Participant, HoleResult, Carryover, Player } from "../types";
 import { Platform } from "react-native";
 
 const dbName = "dropinskins.db";
+let sqliteDbSingleton: SimpleDb | null = null;
 
 // In-memory mock for web testing
 const webMock = {
@@ -110,7 +111,11 @@ export const initDatabase = async () => {
     }
 
     try {
+        if (sqliteDbSingleton && (Platform.OS as any) !== "web") return sqliteDbSingleton;
+
         const db = await SQLite.openDatabaseAsync(dbName);
+        sqliteDbSingleton = db as unknown as SimpleDb;
+
         await db.execAsync(`
             PRAGMA journal_mode = WAL;
             CREATE TABLE IF NOT EXISTS players (
@@ -174,7 +179,11 @@ interface SimpleDb {
 
 const getDb = async (): Promise<SimpleDb> => {
     if (Platform.OS === "web") return webMock as unknown as SimpleDb;
-    return await SQLite.openDatabaseAsync(dbName) as unknown as SimpleDb;
+    if (sqliteDbSingleton) return sqliteDbSingleton;
+
+    // Fallback: if getDb is called before initDatabase, initialize it
+    sqliteDbSingleton = await SQLite.openDatabaseAsync(dbName) as unknown as SimpleDb;
+    return sqliteDbSingleton;
 };
 
 export const DatabaseService = {

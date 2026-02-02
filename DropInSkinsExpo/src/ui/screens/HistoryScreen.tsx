@@ -37,49 +37,59 @@ export const HistoryScreen = ({ navigation }: any) => {
 
     const generateReport = async () => {
         setLoading(true);
-        const reportGames: { id: number, date: string, balances: Record<string, number> }[] = [];
-        const playerSet = new Set<string>();
+        try {
+            const reportGames: { id: number, date: string, balances: Record<string, number> }[] = [];
+            const playerSet = new Set<string>();
 
-        for (const round of filteredRounds) {
-            const data = await DatabaseService.getFullRoundData(round.id!);
-            const { balances } = RoundCalculator.calculateRoundResults(
-                round,
-                data.participants,
-                data.holeResults,
-                data.carryovers
-            );
+            for (const round of filteredRounds) {
+                const data = await DatabaseService.getFullRoundData(round.id!);
+                const { balances } = RoundCalculator.calculateRoundResults(
+                    round,
+                    data.participants,
+                    data.holeResults,
+                    data.carryovers
+                );
 
-            const d = new Date(round.date);
-            const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
+                const d = new Date(round.date);
+                const dateStr = `${d.getMonth() + 1}/${d.getDate()}`;
 
-            reportGames.push({
-                id: round.id!,
-                date: dateStr,
-                balances
+                reportGames.push({
+                    id: round.id!,
+                    date: dateStr,
+                    balances
+                });
+
+                Object.keys(balances).forEach(name => playerSet.add(name));
+            }
+
+            const sortedPlayers = Array.from(playerSet).sort();
+            const totals: Record<string, number> = {};
+            sortedPlayers.forEach(name => {
+                totals[name] = reportGames.reduce((sum, g) => sum + (g.balances[name] || 0), 0);
             });
 
-            Object.keys(balances).forEach(name => playerSet.add(name));
+            setReportData({
+                players: sortedPlayers,
+                games: reportGames.reverse(),
+                totals
+            });
+        } catch (error) {
+            console.error("[HistoryScreen] Error generating report:", error);
+        } finally {
+            setLoading(false);
         }
-
-        const sortedPlayers = Array.from(playerSet).sort();
-        const totals: Record<string, number> = {};
-        sortedPlayers.forEach(name => {
-            totals[name] = reportGames.reduce((sum, g) => sum + (g.balances[name] || 0), 0);
-        });
-
-        setReportData({
-            players: sortedPlayers,
-            games: reportGames.reverse(), // Show newest first or oldest? Let's stay consistent with rounds: newest first
-            totals
-        });
-        setLoading(false);
     };
 
     const loadRounds = async () => {
         setLoading(true);
-        const all = await DatabaseService.getAllRounds();
-        setRounds(all);
-        setLoading(false);
+        try {
+            const all = await DatabaseService.getAllRounds();
+            setRounds(all);
+        } catch (error) {
+            console.error("[HistoryScreen] Error loading rounds:", error);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const filterRounds = () => {
@@ -157,7 +167,7 @@ export const HistoryScreen = ({ navigation }: any) => {
             {filteredRounds.length > 0 && (
                 <View style={styles.summaryBar}>
                     <Text style={styles.summaryText}>
-                        {filteredRounds.length} Rounds | {filteredRounds.reduce((sum, r) => sum + r.totalHoles, 0)} Holes | ${filteredRounds.reduce((sum, r) => sum + r.betAmount, 0).toFixed(2)} Stakes
+                        {filteredRounds.length} Rounds | {filteredRounds.reduce((sum, r) => sum + r.totalHoles, 0)} Holes Scheduled | ${filteredRounds.reduce((sum, r) => sum + r.betAmount, 0).toFixed(2)} Base Stakes
                     </Text>
                 </View>
             )}
@@ -199,7 +209,7 @@ export const HistoryScreen = ({ navigation }: any) => {
                                 </View>
                                 <View style={styles.cardBody}>
                                     <Text style={styles.stats}>
-                                        {item.totalHoles} Holes | ${item.betAmount} Bet
+                                        {item.totalHoles} Holes Planned | ${item.betAmount} Bet
                                     </Text>
                                     <Text style={styles.viewLink}>View Details →</Text>
                                 </View>

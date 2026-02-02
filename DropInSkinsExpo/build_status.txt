@@ -1,0 +1,19 @@
+
+Builds for @dennyfid/drop-in-skins:
+
+ID                       30f6eeb2-0d5f-47e7-9fd9-176efad18697
+Platform                 Android
+Status                   in progress
+Profile                  production
+Distribution             store
+SDK Version              54.0.0
+Version                  1.0.1
+Version code             2
+Commit                   de58511393beffd1ae51b024c3b7d96d444e1cf2
+Logs                     https://expo.dev/accounts/dennyfid/projects/drop-in-skins/builds/30f6eeb2-0d5f-47e7-9fd9-176efad18697
+Application Archive URL  <in progress>
+Build Artifacts URL      <in progress>
+Fingerprint              <in progress>
+Started at               2/1/2026, 9:30:08 PM
+Finished at              <in progress>
+Started by               dennyfid

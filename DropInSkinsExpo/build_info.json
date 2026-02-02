@@ -1,0 +1,52 @@
+[
+  {
+    "id": "484a119e-b5e0-4dba-b757-1fdc28d2e825",
+    "status": "FINISHED",
+    "platform": "ANDROID",
+    "artifacts": {
+      "buildUrl": "https://expo.dev/artifacts/eas/9VK4LAKvja8yuf4xJavVBK.apk",
+      "applicationArchiveUrl": "https://expo.dev/artifacts/eas/9VK4LAKvja8yuf4xJavVBK.apk"
+    },
+    "fingerprint": {
+      "id": "019c1c58-f508-7424-982a-e7a7f0ac4e7a",
+      "hash": "aad86b47090a2d21fe96b054035510aca78df0a9"
+    },
+    "initiatingActor": {
+      "id": "4218bdb0-fcaa-45fd-afdc-ac0f8faba9f0",
+      "displayName": "dennyfid"
+    },
+    "logFiles": [
+      "https://job-logs.eascdn.net/production/484a119e-b5e0-4dba-b757-1fdc28d2e825/1770002118211-527aa186-7bf2-4de6-a48a-5a05940e3aa5.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260202%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260202T040523Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=53f82149a9fcc58d621b91be808f74b5eed0ea1d74110133992624cc2d3870e75c86b30f958bb69cc326624a2a1f79f81b74dc26e10768d73ae62665d57dd915c2a67d6ec67285630fae5da4e387edbfa65c65ed927d02d6eee80fafc312e6b97d93abd3bbbfc73bd2a0bafbb2f37d140c12b631aee19b8edbe932a1d986cc64c7ac002dd84ffa27a2f316f8b12bb0918b2a7d7ecadc8149c1ccee04c1c317868448ac0d31abb8c5f5b228ea03f653e0ffe253c1cd2b971713505921558f4e949059f86ca1549a243ed63d69ab1d9dd50e16fcfc16e7db452849ecf65d2ebc2ddb1f9918f930d3e4e31b185fda70179717e46d81cf100c6932bb845d078f31da",
+      "https://job-logs.eascdn.net/production/484a119e-b5e0-4dba-b757-1fdc28d2e825/1770002123820-9742eaf2-01ba-4baf-9d30-b0f881f6b1ea.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260202%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260202T040523Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=19c43e9f93b14995a2b6ba0ac3c208e39e9ae187503c9a4b262ae5127cb83af5d0468c9c81171a3c4c016c8e348dd601df639398db8c06a361c33a5e990d5b43be8e067ada0cd4d8c3bb0bb2d07a233164fcfc9752ef5daccd23e70acfa21031cdd6faf6e88fb0a01837173c39141edbf236e23eca65c25cd8eb2a692ca5cc146b0bbeeef1894d059b5368aa0d266b103a8045283cf44807a396e0f3cfb59100fb500635bb653d280627cd6418cfe4a17873afbb7c6e589183df447f433211120cd2d3ad75a182d66dce09436ef15c961b94c14c053413706bfacd6dff71c2d86a8056328e71c33211fcb640c380a7d25c37f2f4cb74465b16c68a69a7c19ffd",
+      "https://job-logs.eascdn.net/production/484a119e-b5e0-4dba-b757-1fdc28d2e825/1770002124093-ab395cc8-302b-42e1-b686-a08ed996197c.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260202%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260202T040523Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=426092a96c640aa4df570defad6aae0e43135f70363f3535d507de8ed92e8ff442e58ca1787407906035ae1aa88aab15daf4e55ebc69415283cb4b59776e49dfe5236ae376a2b8c2789f4a1a2fc958c88a2cd0dccf9e53527611d17e6e929c551d85b251699c99b9cb1a9ea9345ac2b2301cdb0496d19522ade024316dc8a59d36ec15ab830130b7502847b2f2bf1b0912d2f00cd6b434b56674340d84799b6a6b40f74f1f0dad0e41ebc43ed144007c9c4ffee86f784ac1a443fbb299cf8e6a7a5072f104b70ffb8f48665c8714d46464582e9f6428cdfe10a75f45b3a8d941cfa20f7dd2b2188d5b4ccc367fae0d4dcda63636eb2c8839dbfcdf2614f7a97c",
+      "https://job-logs.eascdn.net/production/484a119e-b5e0-4dba-b757-1fdc28d2e825/1770002124301-392d834a-3867-4a6c-b2bf-8574c34f6870.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260202%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260202T040523Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=15d563a629fe529073d45c1931ba1ba55361b0037eeed12531284536bc9c6cfbcb6de828a310ddb548824e45ecc3c61984601747bf2fde2fcf923cbb5d44db8e49f33dfc0880f5a4698d21dfb242b7a7fe427d50aec0fee29d9a2be1b789ded15a0d4e59f138e178248827ee4fed5774c0e01a827d4f7aa0d817873991471cc058308eef1a633d4bd1716570f5416c8d6a88696e783e7c9650c01cbf2d5947067193da2add2c1a360c028ea18bed8558abf1c35d268eeb1013337f0e4dd99deb7e2c10b1944e69fa1c4ab997189f7a730e77e83017fc63f3206334a9d8f44c0b3ed380251de052663447b2ced4be511704c9db53873eb602679824c06d3dd2a5"
+    ],
+    "project": {
+      "id": "22e821f4-bf19-4160-b50b-813a45e535d6",
+      "name": "drop-in-skins",
+      "slug": "drop-in-skins",
+      "ownerAccount": {
+        "id": "4bdcb454-0ed0-42a7-a1eb-301dd743a677",
+        "name": "dennyfid"
+      }
+    },
+    "distribution": "INTERNAL",
+    "buildProfile": "internal",
+    "sdkVersion": "54.0.0",
+    "appVersion": "1.0.0",
+    "appBuildVersion": "1",
+    "gitCommitHash": "de58511393beffd1ae51b024c3b7d96d444e1cf2",
+    "gitCommitMessage": "configured for android",
+    "priority": "NORMAL_PLUS",
+    "createdAt": "2026-02-02T03:15:17.860Z",
+    "updatedAt": "2026-02-02T03:25:35.063Z",
+    "completedAt": "2026-02-02T03:25:24.558Z",
+    "expirationDate": "2026-02-16T03:15:17.887Z",
+    "isForIosSimulator": false,
+    "metrics": {
+      "buildWaitTime": 136,
+      "buildQueueTime": 43928,
+      "buildDuration": 562219
+    }
+  }
+]
