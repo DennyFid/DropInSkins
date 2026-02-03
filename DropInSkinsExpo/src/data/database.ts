@@ -416,5 +416,12 @@ export const DatabaseService = {
         // Actually, we should delete them as they'll be re-created if still tied
         await db.runAsync("DELETE FROM hole_results WHERE roundId = ? AND holeNumber = ?", roundId, holeNumber);
         await db.runAsync("DELETE FROM carryovers WHERE roundId = ? AND originatingHole = ?", roundId, holeNumber);
+    },
+    async resetRoundCarryovers(roundId: number) {
+        const db = await getDb();
+        // Delete generated carryovers (hole > 0)
+        await db.runAsync("DELETE FROM carryovers WHERE roundId = ? AND originatingHole > 0", roundId);
+        // Reset valid initial carryovers (hole 0) to not won
+        await db.runAsync("UPDATE carryovers SET isWon = 0 WHERE roundId = ? AND originatingHole = 0", roundId);
     }
 };

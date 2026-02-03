@@ -101,7 +101,8 @@ export const ReportService = {
 
             // 2. Share the Report
             const fileName = `Skins_Report_${latestDate.toISOString().split('T')[0]}.txt`;
-            const fileUri = FileSystem.cacheDirectory + fileName;
+            // @ts-ignore
+            const fileUri = (FileSystem.documentDirectory || FileSystem.cacheDirectory) + fileName;
 
             await FileSystem.writeAsStringAsync(fileUri, reportText);
 
