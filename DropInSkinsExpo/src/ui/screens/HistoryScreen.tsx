@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { DatabaseService } from "../../data/database";
 import { Round, Participant, HoleResult, Carryover } from "../../types";
 import { RoundCalculator } from "../../domain/RoundCalculator";
@@ -34,6 +35,12 @@ export const HistoryScreen = ({ navigation }: any) => {
     useEffect(() => {
         loadRounds();
     }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            loadRounds();
+        }, [])
+    );
 
     useEffect(() => {
         filterRounds();
@@ -176,21 +183,36 @@ export const HistoryScreen = ({ navigation }: any) => {
         <View style={styles.container}>
             <View style={styles.headerRow}>
                 <Text style={styles.title}>All Rounds</Text>
-                <TouchableOpacity
-                    style={[styles.shareBtn, exportLoading && styles.disabledShareBtn]}
-                    onPress={async () => {
-                        setExportLoading(true);
-                        await ReportService.generateAndShareReport();
-                        setExportLoading(false);
-                    }}
-                    disabled={exportLoading}
-                >
-                    {exportLoading ? (
-                        <ActivityIndicator size="small" color="#007AFF" />
-                    ) : (
-                        <Text style={styles.shareBtnText}>📤 Share Report</Text>
-                    )}
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'column', gap: 5 }}>
+                    <TouchableOpacity
+                        style={[styles.shareBtn, exportLoading && styles.disabledShareBtn]}
+                        onPress={async () => {
+                            setExportLoading(true);
+                            await ReportService.generateAndShareReport();
+                            setExportLoading(false);
+                        }}
+                        disabled={exportLoading}
+                    >
+                        <Text style={styles.shareBtnText}>📄 Text</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.shareBtn, { borderColor: '#34C759' }, exportLoading && styles.disabledShareBtn]}
+                        onPress={async () => {
+                            setExportLoading(true);
+                            await ReportService.generateAndShareCSV();
+                            setExportLoading(false);
+                        }}
+                        disabled={exportLoading}
+                    >
+                        <Text style={[styles.shareBtnText, { color: '#34C759' }]}>📊 CSV</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.shareBtn}
+                        onPress={() => navigation.popToTop()}
+                    >
+                        <Text style={styles.shareBtnText}>🏠 Home</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <View style={styles.filterSection}>
@@ -318,7 +340,7 @@ const styles = StyleSheet.create({
     container: { flex: 1, padding: 20, backgroundColor: "#f9f9f9" },
     centered: { flex: 1, justifyContent: "center" },
     headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    title: { fontSize: 24, fontWeight: "bold", marginBottom: 0 },
+    title: { fontSize: 32, fontWeight: "bold", textAlign: 'center', flex: 1 },
     shareBtn: { padding: 10, backgroundColor: '#fff', borderRadius: 8, elevation: 1, borderWidth: 1, borderColor: '#eee' },
     shareBtnText: { color: '#007AFF', fontWeight: 'bold' },
     disabledShareBtn: { opacity: 0.5 },

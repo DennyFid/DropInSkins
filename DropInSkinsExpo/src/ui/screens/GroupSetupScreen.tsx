@@ -174,6 +174,7 @@ export const GroupSetupScreen = ({ navigation }: any) => {
                             <Text style={styles.sectionBody}>
                                 Drop-In Skins is a flexible scoring app for Skins golf. Each hole is worth 1 "Skin" (or stake).
                                 The player with the lowest score on a hole wins the skin.
+                                Note: You must enter a score or use "Skip" to move forward; the app will stay on the "Live Scoring" screen until the round is finished.
                             </Text>
                         </View>
 
@@ -201,12 +202,20 @@ export const GroupSetupScreen = ({ navigation }: any) => {
                             </Text>
                         </View>
 
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>⏭️ Skipping & Reporting</Text>
+                            <Text style={styles.sectionBody}>
+                                Use "Skip Hole" to bypass a hole without any skins being deducted from players.
+                                Tap "Share Report" on the Summary or History screens to export a CSV or summary of the games played.
+                            </Text>
+                        </View>
+
                         <TouchableOpacity style={styles.closeBtn} onPress={() => setShowHelp(false)}>
                             <Text style={styles.closeBtnText}>Got it!</Text>
                         </TouchableOpacity>
 
                         <Text style={styles.versionText}>
-                            Version {Constants.expoConfig?.version || "1.0.1"}
+                            Version {Constants.expoConfig?.version || "2.0.0"}
                         </Text>
                     </ScrollView>
                 </View>
@@ -263,7 +272,7 @@ export const GroupSetupScreen = ({ navigation }: any) => {
 const styles = StyleSheet.create({
     container: { flex: 1, padding: 20, backgroundColor: "#fff" },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    title: { fontSize: 24, fontWeight: "bold" },
+    title: { fontSize: 32, fontWeight: "bold", textAlign: 'center', flex: 1 },
     historyLinkHeader: { color: '#007AFF', fontSize: 16, fontWeight: '600' },
     coBanner: { backgroundColor: '#FFF9C4', padding: 15, borderRadius: 10, marginBottom: 20, borderLeftWidth: 5, borderLeftColor: '#FBC02D' },
     coBannerText: { color: '#7B5E00', fontWeight: 'bold', fontSize: 16 },

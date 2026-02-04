@@ -372,13 +372,14 @@ export const DatabaseService = {
 
     async saveCarryover(roundId: number, originatingHole: number, amount: number, eligibleNames: string[]) {
         const db = await getDb();
-        return await db.runAsync(
+        const result = await db.runAsync(
             "INSERT INTO carryovers (roundId, originatingHole, amount, eligibleNames) VALUES (?, ?, ?, ?)",
             roundId,
             originatingHole,
             amount,
             JSON.stringify(eligibleNames)
         );
+        return result.lastInsertRowId;
     },
 
     async getCarryovers(roundId: number) {

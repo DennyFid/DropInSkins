@@ -4,8 +4,8 @@ import { DatabaseService } from "../../data/database";
 import { Player, Carryover } from "../../types";
 
 export const RoundSetupScreen = ({ navigation }: any) => {
-    const [holes, setHoles] = useState("9");
-    const [bet, setBet] = useState("0.01");
+    const [holes, setHoles] = useState("18");
+    const [bet, setBet] = useState("0.25");
     const [useCarryovers, setUseCarryovers] = useState(true);
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
     const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<number>>(new Set());
@@ -143,7 +143,7 @@ export const RoundSetupScreen = ({ navigation }: any) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1, padding: 20, backgroundColor: "#fff" },
-    title: { fontSize: 24, fontWeight: "bold", marginBottom: 20 },
+    title: { fontSize: 32, fontWeight: "bold", textAlign: 'center', marginBottom: 20 },
     label: { fontSize: 16, marginBottom: 5, fontWeight: "600" },
     input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 5, padding: 10, marginBottom: 20 },
     row: { flexDirection: "row", gap: 10 },

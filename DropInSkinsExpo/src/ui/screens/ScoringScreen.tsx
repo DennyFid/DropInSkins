@@ -16,9 +16,20 @@ export const ScoringScreen = ({ route, navigation }: any) => {
         carryovers,
         loading,
         submitScore,
+        skipHole,
         joinRound,
         leaveRound
     } = useScoring(roundId);
+
+    useEffect(() => {
+        navigation.setOptions({
+            headerLeft: () => (
+                <TouchableOpacity onPress={() => navigation.popToTop()} style={{ marginLeft: 10 }}>
+                    <Text style={{ color: '#007AFF', fontSize: 16 }}>🏠 Home</Text>
+                </TouchableOpacity>
+            ),
+        });
+    }, [navigation]);
 
     useEffect(() => {
         if (jumpToHole) {
@@ -58,19 +69,42 @@ export const ScoringScreen = ({ route, navigation }: any) => {
     };
 
     const handleSubmit = async () => {
-        if (submitting) return;
+        if (submitting) return false;
         Keyboard.dismiss();
+
+        const numericScores: Record<string, number> = {};
+        Object.entries(scores).forEach(([name, val]) => {
+            const parsed = parseInt(val, 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                numericScores[name] = parsed;
+            }
+        });
+
+        const hasScores = Object.keys(numericScores).length > 0;
+        if (!hasScores && !jumpToHole) {
+            alert("Please enter at least one score or use 'Skip Hole'.");
+            return false;
+        }
+
         setSubmitting(true);
         try {
-            const numericScores: Record<string, number> = {};
-            Object.entries(scores).forEach(([name, val]) => {
-                const parsed = parseInt(val, 10);
-                if (!isNaN(parsed) && parsed > 0) {
-                    numericScores[name] = parsed;
-                }
-            });
-            await submitScore(numericScores);
-            setScores({});
+            const willAdvance = hasScores && !jumpToHole;
+            await submitScore(numericScores, willAdvance);
+            return true;
+        } catch (e) {
+            console.error("[ScoringScreen] Submit error:", e);
+            return false;
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleSkip = async () => {
+        if (submitting) return;
+        setSubmitting(true);
+        try {
+            await skipHole();
+            // sync effect will handle clearing if the hole changes
         } finally {
             setSubmitting(false);
         }
@@ -98,7 +132,9 @@ export const ScoringScreen = ({ route, navigation }: any) => {
                 <View style={styles.header}>
                     <View>
                         <Text style={styles.title}>Hole {currentHole}</Text>
-                        <Text style={styles.subtitle}>{totalSkinsAtStake} Skins at stake</Text>
+                        <Text style={styles.subtitle}>
+                            {totalSkinsAtStake} {totalSkinsAtStake === 1 ? "Skin" : "Skins"} at stake
+                        </Text>
                         {outstandingSkinsCount > 0 && (
                             <Text style={styles.coIndicator}>{outstandingSkinsCount} Outstanding Carryover(s)</Text>
                         )}
@@ -149,17 +185,34 @@ export const ScoringScreen = ({ route, navigation }: any) => {
                             <Text style={styles.sideBtnText}>Save & Return</Text>
                         </TouchableOpacity>
                     ) : (
-                        <TouchableOpacity
-                            style={[styles.sideBtn, styles.nextBtn, (activeParticipants.length === 0 || submitting) && styles.disabledBtn]}
-                            onPress={handleSubmit}
-                            disabled={activeParticipants.length === 0 || submitting}
-                        >
-                            {submitting ? (
-                                <ActivityIndicator color="#fff" size="small" />
-                            ) : (
-                                <Text style={styles.sideBtnText}>Next Hole</Text>
-                            )}
-                        </TouchableOpacity>
+                        <>
+                            <TouchableOpacity
+                                style={[styles.sideBtn, styles.skipBtn, submitting && styles.disabledBtn]}
+                                onPress={handleSkip}
+                                disabled={submitting}
+                            >
+                                <Text style={styles.sideBtnText}>Skip Hole</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.sideBtn, styles.nextBtn, (activeParticipants.length === 0 || submitting) && styles.disabledBtn]}
+                                onPress={async () => {
+                                    const success = await handleSubmit();
+                                    if (success && currentHole === round?.totalHoles) {
+                                        // On last hole next button, just go to stats without completing
+                                        navigation.navigate("Stats", { roundId });
+                                    }
+                                }}
+                                disabled={activeParticipants.length === 0 || submitting}
+                            >
+                                {submitting ? (
+                                    <ActivityIndicator color="#fff" size="small" />
+                                ) : (
+                                    <Text style={styles.sideBtnText}>
+                                        {currentHole === round?.totalHoles ? "Save & View Stats" : "Next Hole"}
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        </>
                     )}
                 </View>
 
@@ -168,12 +221,14 @@ export const ScoringScreen = ({ route, navigation }: any) => {
                         style={[styles.finishBtn, submitting && styles.disabledBtn]}
                         disabled={submitting}
                         onPress={async () => {
-                            await handleSubmit(); // Save the final hole's scores
-                            await DatabaseService.completeRound(roundId);
-                            navigation.navigate("Stats", { roundId });
+                            const success = await handleSubmit(); // Save the final hole's scores
+                            if (success) {
+                                // Just navigate to stats, let user finalize there
+                                navigation.navigate("Stats", { roundId });
+                            }
                         }}
                     >
-                        <Text style={styles.finishBtnText}>Finish and Save Round</Text>
+                        <Text style={styles.finishBtnText}>Save & View Stats</Text>
                     </TouchableOpacity>
                 )}
 
@@ -183,21 +238,25 @@ export const ScoringScreen = ({ route, navigation }: any) => {
                         style={[styles.finishBtn, { backgroundColor: '#FF9500' }, submitting && styles.disabledBtn]}
                         disabled={submitting}
                         onPress={async () => {
-                            await handleSubmit();
-                            await DatabaseService.completeRound(roundId);
-                            navigation.navigate("Stats", { roundId });
+                            const success = await handleSubmit();
+                            if (success) {
+                                await DatabaseService.completeRound(roundId);
+                                navigation.navigate("Stats", { roundId });
+                            }
                         }}
                     >
                         <Text style={styles.finishBtnText}>End Round Early</Text>
                     </TouchableOpacity>
                 )}
 
-                <TouchableOpacity
-                    style={styles.statsBtn}
-                    onPress={() => navigation.navigate("Stats", { roundId })}
-                >
-                    <Text style={styles.statsBtnText}>View Stats</Text>
-                </TouchableOpacity>
+                {round?.isCompleted && (
+                    <TouchableOpacity
+                        style={[styles.finishBtn, { backgroundColor: '#007AFF' }]}
+                        onPress={() => navigation.popToTop()}
+                    >
+                        <Text style={styles.finishBtnText}>Exit to Home</Text>
+                    </TouchableOpacity>
+                )}
             </ScrollView>
 
             <Modal visible={showManageModal} animationType="slide" transparent={false}>
@@ -237,7 +296,7 @@ const styles = StyleSheet.create({
     container: { padding: 20, backgroundColor: "#fff" },
     centered: { flex: 1, justifyContent: "center" },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-    title: { fontSize: 28, fontWeight: "bold" },
+    title: { fontSize: 32, fontWeight: "bold", textAlign: 'center', flex: 1 },
     subtitle: { fontSize: 16, color: "#666" },
     coIndicator: { fontSize: 20, color: "#FF9500", fontWeight: "bold", marginTop: 4 },
     manageBtn: { alignItems: 'center' },
@@ -251,6 +310,7 @@ const styles = StyleSheet.create({
     buttonRow: { flexDirection: "row", justifyContent: "space-between", marginVertical: 30, gap: 10 },
     sideBtn: { flex: 1, padding: 15, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     prevBtn: { backgroundColor: '#8E8E93' },
+    skipBtn: { backgroundColor: '#FF9500' },
     nextBtn: { backgroundColor: '#007AFF' },
     sideBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
     disabledBtn: { backgroundColor: '#ccc' },
@@ -260,7 +320,7 @@ const styles = StyleSheet.create({
     statsBtnText: { color: '#007AFF', fontSize: 16, fontWeight: '500' },
     noPlayers: { textAlign: 'center', marginTop: 50, color: '#999', fontSize: 16 },
     modalContainer: { flex: 1, padding: 40, backgroundColor: '#f9f9f9' },
-    modalTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 30 },
+    modalTitle: { fontSize: 32, fontWeight: "bold", marginBottom: 5, textAlign: 'center' },
     sectionLabel: { fontSize: 14, fontWeight: '600', color: '#666', marginBottom: 10, textTransform: 'uppercase' },
     mgmtRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 10, marginBottom: 10, elevation: 2 },
     mgmtName: { fontSize: 18 },

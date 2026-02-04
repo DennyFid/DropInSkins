@@ -45,15 +45,11 @@ export class RoundCalculator {
         const sortedResults = [...holeResults].sort((a, b) => a.holeNumber - b.holeNumber);
         console.log(`[RoundCalc] Simulating round with ${sortedResults.length} holes and ${allCarryovers.length} total COs available in history.`);
 
+        const holeOutcomes: any[] = [];
         sortedResults.forEach(res => {
             const activeParts = participants.filter(p =>
                 res.holeNumber >= p.startHole && (p.endHole === null || res.holeNumber <= p.endHole)
             );
-
-            // Deduct bet for current hole from all active participants (whether it ties or wins)
-            activeParts.forEach(p => {
-                balanceBoard[p.name] = (balanceBoard[p.name] || 0) - round.betAmount;
-            });
 
             const outcome = this.engine.calculateHole(
                 res.holeNumber,
@@ -63,7 +59,20 @@ export class RoundCalculator {
                 round.betAmount
             );
 
+            holeOutcomes.push({
+                holeNumber: res.holeNumber,
+                scores: res.participantScores,
+                type: outcome.type,
+                skinsTotal: round.betAmount * activeParts.length,
+                winners: outcome.type === "Winner" ? [outcome.winnerName] : (outcome.type === "CarryoverCreated" ? outcome.eligibleNames : [])
+            });
+
             if (outcome.type === "Winner") {
+                // Deduct bet for current hole from all active participants
+                activeParts.forEach(p => {
+                    balanceBoard[p.name] = (balanceBoard[p.name] || 0) - round.betAmount;
+                });
+
                 // Skin count is 1 (the hole itself) + any claimed carryover holes
                 const skinCount = 1 + outcome.claimedCarryoverIds.length;
                 skinsBoard[outcome.winnerName] = (skinsBoard[outcome.winnerName] || 0) + skinCount;
@@ -85,6 +94,11 @@ export class RoundCalculator {
 
                 currentOutstandingCOs = currentOutstandingCOs.filter(co => !outcome.claimedCarryoverIds.includes(co.id || -1));
             } else if (outcome.type === "CarryoverCreated") {
+                // Deduct bet for current hole from all active participants to fund the CO
+                activeParts.forEach(p => {
+                    balanceBoard[p.name] = (balanceBoard[p.name] || 0) - round.betAmount;
+                });
+
                 // Only create/carry over if allowed
                 if (round.useCarryovers) {
                     // Find the ACTUAL CO object from the provided carryovers for this hole
@@ -119,6 +133,6 @@ export class RoundCalculator {
             });
         }
 
-        return { leaderboard: skinsBoard, balances: balanceBoard };
+        return { leaderboard: skinsBoard, balances: balanceBoard, holeOutcomes };
     }
 }

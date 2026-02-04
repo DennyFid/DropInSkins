@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { RoundCalculator } from "../domain/RoundCalculator";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { DatabaseService } from "../data/database";
 import { SkinsEngine } from "../domain/SkinsEngine";
-import { RoundCalculator } from "../domain/RoundCalculator";
 import { Round, Participant, HoleResult, Carryover } from "../types";
 
 export const useScoring = (roundId: number) => {
@@ -18,73 +18,68 @@ export const useScoring = (roundId: number) => {
         loadData();
     }, [roundId]);
 
-    const loadData = async () => {
+    const loadData = useCallback(async () => {
         setLoading(true);
         try {
-            const r = await DatabaseService.getRoundById(roundId);
+            const [r, parts, results, cos] = await Promise.all([
+                DatabaseService.getRoundById(roundId),
+                DatabaseService.getParticipants(roundId),
+                DatabaseService.getHoleResults(roundId),
+                DatabaseService.getRoundHistoryCarryovers(roundId)
+            ]);
+
             if (r) setRound(r);
-
-            const parts = await DatabaseService.getParticipants(roundId);
             setParticipants(parts);
-
-            const results = await DatabaseService.getHoleResults(roundId);
             setHoleResults(results);
-
-            const cos = await DatabaseService.getRoundHistoryCarryovers(roundId);
             setCarryovers(cos);
         } catch (error) {
             console.error("[useScoring] Error loading data:", error);
         } finally {
             setLoading(false);
         }
-    };
+    }, [roundId]);
 
-    const [leaderboard, setLeaderboard] = useState<Record<string, number>>({});
-    const [balances, setBalances] = useState<Record<string, number>>({});
-
-    useEffect(() => {
-        if (!round) return;
-
-        const { leaderboard: newLeaderboard, balances: newBalances } = RoundCalculator.calculateRoundResults(
+    const calculationResults = useMemo(() => {
+        if (!round) return { leaderboard: {} as Record<string, number>, balances: {} as Record<string, number>, holeOutcomes: [] as any[] };
+        return RoundCalculator.calculateRoundResults(
             round,
             participants,
             holeResults,
             carryovers
         );
+    }, [round, participants, holeResults, carryovers]);
 
-        setLeaderboard(newLeaderboard);
-        setBalances(newBalances);
-    }, [holeResults, participants, round, carryovers]);
+    const leaderboard = calculationResults.leaderboard;
+    const balances = calculationResults.balances;
+    const holeOutcomes = calculationResults.holeOutcomes;
 
-    const joinRound = async (name: string) => {
+    const joinRound = useCallback(async (name: string) => {
         try {
             await DatabaseService.addParticipant(roundId, name, currentHole);
             await loadData();
         } catch (error) {
             console.error("[useScoring] Error joining round:", error);
         }
-    };
+    }, [roundId, currentHole, loadData]);
 
-    const leaveRound = async (participantId: number) => {
+    const leaveRound = useCallback(async (participantId: number) => {
         try {
             await DatabaseService.updateParticipantEndHole(participantId, currentHole - 1);
             await loadData();
         } catch (error) {
             console.error("[useScoring] Error leaving round:", error);
         }
-    };
+    }, [currentHole, loadData]);
 
-    const submitScore = async (scores: Record<string, number>) => {
+    const submitScore = useCallback(async (scores: Record<string, number>, autoAdvance: boolean = true) => {
         if (!round) return;
 
         try {
             // 1. Save the new score for the current hole (Overwrite existing)
-            // We do this first so it's included in the "re-play"
             await DatabaseService.deleteHoleData(roundId, currentHole);
             await DatabaseService.saveHoleResult(roundId, currentHole, scores);
 
             // 2. Reset ALL carryover state for this round
-            // This deletes COs generated active in this round and resets inherited ones
             await DatabaseService.resetRoundCarryovers(roundId);
 
             // 3. Fetch ALL hole results for the round (sorted)
@@ -110,21 +105,15 @@ export const useScoring = (roundId: number) => {
                 );
 
                 if (outcome.type === "Winner") {
-                    // Mark claimed carryovers as won in DB
                     for (const coId of outcome.claimedCarryoverIds) {
                         await DatabaseService.markCarryoverAsWon(coId);
                     }
-                    // Remove claimed COs from the running pool
                     currentPool = currentPool.filter(co => !outcome.claimedCarryoverIds.includes(co.id || -1));
-
                 } else if (outcome.type === "CarryoverCreated") {
-                    // Create the new carryover in DB
-                    // Only if carryovers are enabled for this round
                     if (round.useCarryovers) {
                         const newIdResult = await DatabaseService.saveCarryover(roundId, res.holeNumber, outcome.amount, outcome.eligibleNames);
-                        // Add to running pool with the new DB ID
                         currentPool.push({
-                            id: Number(newIdResult), // Ensure ID is captured
+                            id: Number(newIdResult),
                             roundId,
                             originatingHole: res.holeNumber,
                             amount: outcome.amount,
@@ -137,20 +126,28 @@ export const useScoring = (roundId: number) => {
 
             await loadData();
 
-            // Only advance if we are at the latest hole (checking if we just edited a historic one)
-            // If we edited a historic hole, currentHole is likely < maxHole, so maybe don't auto-advance?
-            // User request implied "edit function", usually you stay put or go back. 
-            // Standard flow: if currentHole is the next one to play (no results ahead), advance.
-            const maxPlayedHole = sortedResults.length > 0 ? sortedResults[sortedResults.length - 1].holeNumber : 0;
-            if (currentHole > maxPlayedHole) {
-                if (currentHole < round.totalHoles) {
-                    setCurrentHole(prev => prev + 1);
-                }
+            if (autoAdvance && currentHole < round.totalHoles) {
+                setCurrentHole(prev => prev + 1);
             }
         } catch (error) {
             console.error("[useScoring] Error submitting score:", error);
         }
-    };
+    }, [round, roundId, currentHole, participants, loadData]);
+
+    const skipHole = useCallback(async () => {
+        if (!round) return;
+        try {
+            await DatabaseService.deleteHoleData(roundId, currentHole);
+            await DatabaseService.saveHoleResult(roundId, currentHole, {});
+
+            if (currentHole < round.totalHoles) {
+                setCurrentHole(prev => prev + 1);
+            }
+            await loadData();
+        } catch (error) {
+            console.error("[useScoring] Error skipping hole:", error);
+        }
+    }, [round, roundId, currentHole, loadData]);
 
     return {
         currentHole,
@@ -163,7 +160,9 @@ export const useScoring = (roundId: number) => {
         carryovers,
         loading,
         submitScore,
+        skipHole,
         joinRound,
-        leaveRound
+        leaveRound,
+        loadData
     };
 };

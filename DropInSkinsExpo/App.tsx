@@ -44,7 +44,16 @@ export default function App() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="GroupSetup">
+      <Stack.Navigator
+        initialRouteName="GroupSetup"
+        screenOptions={{
+          headerTitleAlign: 'center',
+          headerTitleStyle: {
+            fontSize: 22,
+            fontWeight: 'bold',
+          },
+        }}
+      >
         <Stack.Screen name="GroupSetup" component={GroupSetupScreen} options={{ title: "Player Management" }} />
         <Stack.Screen name="RoundSetup" component={RoundSetupScreen} options={{ title: "Drop-in-Skins" }} />
         <Stack.Screen name="Scoring" component={ScoringScreen} options={{ title: "Live Scoring" }} />
