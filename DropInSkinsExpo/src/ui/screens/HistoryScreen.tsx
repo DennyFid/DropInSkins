@@ -1,17 +1,19 @@
 import React, { useEffect, useState, useCallback } from "react";
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform } from "react-native";
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, ActivityIndicator, Alert, TextInput, Platform, Modal } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { DatabaseService } from "../../data/database";
 import { Round, Participant, HoleResult, Carryover } from "../../types";
 import { RoundCalculator } from "../../domain/RoundCalculator";
 import { ReportService } from "../../services/ReportService";
-import { ScrollView } from "react-native";
+import { DataManagementService } from "../../services/DataManagementService";
 
 export const HistoryScreen = ({ navigation }: any) => {
     const [rounds, setRounds] = useState<Round[]>([]);
     const [filteredRounds, setFilteredRounds] = useState<Round[]>([]);
     const [loading, setLoading] = useState(true);
     const [exportLoading, setExportLoading] = useState(false);
+    const [backupFiles, setBackupFiles] = useState<{ uri: string, name: string }[]>([]);
+    const [showRestoreModal, setShowRestoreModal] = useState(false);
 
     const now = new Date();
     const thirtyDaysAgo = new Date();
@@ -27,7 +29,8 @@ export const HistoryScreen = ({ navigation }: any) => {
     const [reportData, setReportData] = useState<{
         players: string[],
         games: { id: number, date: string, balances: Record<string, number> }[],
-        totals: Record<string, number>
+        totals: Record<string, number>,
+        totalWinnings: Record<string, number>
     } | null>(null);
 
     const isWeb = Platform.OS === 'web';
@@ -57,10 +60,12 @@ export const HistoryScreen = ({ navigation }: any) => {
         try {
             const reportGames: { id: number, date: string, balances: Record<string, number> }[] = [];
             const playerSet = new Set<string>();
+            const totalWinnings: Record<string, number> = {};
+            const totals: Record<string, number> = {};
 
             for (const round of filteredRounds) {
                 const data = await DatabaseService.getFullRoundData(round.id!);
-                const { balances } = RoundCalculator.calculateRoundResults(
+                const { balances, grossWinnings } = RoundCalculator.calculateRoundResults(
                     round,
                     data.participants,
                     data.holeResults,
@@ -76,11 +81,18 @@ export const HistoryScreen = ({ navigation }: any) => {
                     balances
                 });
 
+                // Accumulate winnings
+                if (grossWinnings) {
+                    Object.entries(grossWinnings).forEach(([name, won]) => {
+                        totalWinnings[name] = (totalWinnings[name] || 0) + won;
+                    });
+                }
+
                 Object.keys(balances).forEach(name => playerSet.add(name));
             }
 
             const sortedPlayers = Array.from(playerSet).sort();
-            const totals: Record<string, number> = {};
+
             sortedPlayers.forEach(name => {
                 totals[name] = reportGames.reduce((sum, g) => sum + (g.balances[name] || 0), 0);
             });
@@ -88,7 +100,8 @@ export const HistoryScreen = ({ navigation }: any) => {
             setReportData({
                 players: sortedPlayers,
                 games: reportGames.reverse(),
-                totals
+                totals,
+                totalWinnings
             });
         } catch (error) {
             console.error("[HistoryScreen] Error generating report:", error);
@@ -177,6 +190,58 @@ export const HistoryScreen = ({ navigation }: any) => {
         return `${datePart} ${timePart}`;
     };
 
+    const handleBackup = async () => {
+        setExportLoading(true);
+        try {
+            await DataManagementService.backupData();
+        } finally {
+            setExportLoading(false);
+        }
+    };
+
+    const handleRestore = async () => {
+        if (!isWeb) {
+            const files = await DataManagementService.getBackupFiles();
+            if (files && files.length > 0) {
+                setBackupFiles(files);
+                setShowRestoreModal(true);
+            } else {
+                // Fallback to system picker if no directory set or no files
+                performSystemRestore();
+            }
+        } else {
+            // Web simplistic confirmation
+            if (confirm("Restore will OVERWRITE all data. Proceed?")) {
+                const success = await DataManagementService.restoreData();
+                if (success) loadRounds();
+            }
+        }
+    };
+
+    const performSystemRestore = async (uri?: string) => {
+        Alert.alert(
+            "Confirm Restore",
+            "This will OVERWRITE all current data with the selected backup. This cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Proceed",
+                    style: "destructive",
+                    onPress: async () => {
+                        setLoading(true);
+                        const success = await DataManagementService.restoreData(uri);
+                        if (success) {
+                            alert("Restore successful! Reloading data...");
+                            loadRounds();
+                        }
+                        setLoading(false);
+                        setShowRestoreModal(false);
+                    }
+                }
+            ]
+        );
+    };
+
     if (loading) return <ActivityIndicator size="large" style={styles.centered} />;
 
     return (
@@ -213,6 +278,23 @@ export const HistoryScreen = ({ navigation }: any) => {
                         <Text style={styles.shareBtnText}>🏠 Home</Text>
                     </TouchableOpacity>
                 </View>
+            </View>
+
+            <View style={styles.manageRow}>
+                <TouchableOpacity
+                    style={styles.backupBtn}
+                    onPress={handleBackup}
+                    disabled={exportLoading}
+                >
+                    <Text style={styles.backupBtnText}>💾 Backup</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                    style={styles.restoreBtn}
+                    onPress={handleRestore}
+                    disabled={exportLoading}
+                >
+                    <Text style={styles.restoreBtnText}>🔄 Restore</Text>
+                </TouchableOpacity>
             </View>
 
             <View style={styles.filterSection}>
@@ -302,7 +384,8 @@ export const HistoryScreen = ({ navigation }: any) => {
                                 {reportData.games.map(g => (
                                     <Text key={g.id} style={[styles.reportCell, styles.gameColumn, styles.headerText]}>{g.date}</Text>
                                 ))}
-                                <Text style={[styles.reportCell, styles.totalColumn, styles.headerText]}>Total</Text>
+                                <Text style={[styles.reportCell, styles.totalColumn, styles.headerText]}>Total Won</Text>
+                                <Text style={[styles.reportCell, styles.totalColumn, styles.headerText]}>Net Total</Text>
                             </View>
                             {reportData.players.map(player => (
                                 <View key={player} style={styles.reportRow}>
@@ -322,6 +405,13 @@ export const HistoryScreen = ({ navigation }: any) => {
                                     <Text style={[
                                         styles.reportCell,
                                         styles.totalColumn,
+                                        { fontWeight: 'bold', color: '#4CD964' }
+                                    ]}>
+                                        {reportData.totalWinnings[player] ? `+$${reportData.totalWinnings[player].toFixed(2)}` : '-'}
+                                    </Text>
+                                    <Text style={[
+                                        styles.reportCell,
+                                        styles.totalColumn,
                                         { fontWeight: 'bold', color: reportData.totals[player] >= 0 ? '#4CD964' : '#FF3B30' }
                                     ]}>
                                         {(reportData.totals[player] >= 0 ? '+' : '') + reportData.totals[player].toFixed(2)}
@@ -332,6 +422,40 @@ export const HistoryScreen = ({ navigation }: any) => {
                     </ScrollView>
                 )
             )}
+
+            <Modal visible={showRestoreModal} animationType="slide" transparent={true}>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.pickerModalContent}>
+                        <Text style={styles.modalTitle}>Select Backup</Text>
+                        <Text style={styles.modalSubtitle}>Found in your backup folder</Text>
+
+                        <FlatList
+                            data={backupFiles}
+                            keyExtractor={item => item.uri}
+                            renderItem={({ item }) => (
+                                <TouchableOpacity
+                                    style={styles.fileItem}
+                                    onPress={() => performSystemRestore(item.uri)}
+                                >
+                                    <Text style={styles.fileName}>{item.name}</Text>
+                                </TouchableOpacity>
+                            )}
+                            ListFooterComponent={
+                                <TouchableOpacity
+                                    style={[styles.fileItem, { borderBottomWidth: 0, marginTop: 10 }]}
+                                    onPress={() => { setShowRestoreModal(false); performSystemRestore(); }}
+                                >
+                                    <Text style={[styles.fileName, { color: '#007AFF', fontWeight: 'bold' }]}>📁 Browse Other...</Text>
+                                </TouchableOpacity>
+                            }
+                        />
+
+                        <TouchableOpacity style={styles.cancelModalBtn} onPress={() => setShowRestoreModal(false)}>
+                            <Text style={styles.cancelModalBtnText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -380,5 +504,20 @@ const styles = StyleSheet.create({
     gameColumn: { width: 80 },
     totalColumn: { width: 100, fontWeight: 'bold' },
     headerText: { fontSize: 12, color: '#999', textTransform: 'uppercase', fontWeight: 'bold' },
-    playerNameText: { fontSize: 15 }
+    playerNameText: { fontSize: 15 },
+    manageRow: { flexDirection: 'row', gap: 10, marginBottom: 15, justifyContent: 'flex-end' },
+    backupBtn: { backgroundColor: '#F0F4C3', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#CDDC39' },
+    backupBtnText: { color: '#827717', fontWeight: 'bold', fontSize: 12 },
+    restoreBtn: { backgroundColor: '#FFE0B2', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#FF9800' },
+    restoreBtnText: { color: '#E65100', fontWeight: 'bold', fontSize: 12 },
+
+    // Recovery Modal Styles
+    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    pickerModalContent: { backgroundColor: '#fff', borderRadius: 20, padding: 20, width: '100%', maxHeight: '80%' },
+    modalTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 10, textAlign: 'center' },
+    modalSubtitle: { fontSize: 14, color: '#666', marginBottom: 20, textAlign: 'center' },
+    fileItem: { paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+    fileName: { fontSize: 16, color: '#333' },
+    cancelModalBtn: { marginTop: 20, padding: 15, borderRadius: 10, alignItems: 'center', backgroundColor: '#eee' },
+    cancelModalBtnText: { fontSize: 16, fontWeight: 'bold', color: '#666' }
 });

@@ -29,35 +29,20 @@ export class SkinsEngine {
 
         if (winners.length === 1) {
             const winnerName = winners[0];
-            // One winner - takes the skin + any eligible carryovers
-            const winnerKey = winnerName.trim().toLowerCase();
-            const eligibleCOs = outstandingCarryovers.filter(co =>
-                co.eligibleParticipantNames.some(name => name.trim().toLowerCase() === winnerKey)
-            );
-
-            console.log(`[Engine] Winner: ${winnerName}. Pool size: ${outstandingCarryovers.length}. Eligible COs: ${eligibleCOs.length}`);
-            if (outstandingCarryovers.length > 0 && eligibleCOs.length === 0) {
-                console.log(`[Engine] Available COs for this hole:`, outstandingCarryovers.map(c => ({ hole: c.originatingHole, players: c.eligibleParticipantNames })));
-            }
-
-            const totalCOAmount = eligibleCOs.reduce((sum, co) => sum + co.amount, 0);
-
             return {
                 type: "Winner",
                 winnerName: winnerName,
-                totalWon: betAmount + totalCOAmount,
-                claimedCarryoverIds: eligibleCOs.map(co => co.id).filter((id): id is number => id !== undefined),
-                carryoverCreated: false,
+                score: minScore
             };
         } else {
-            // Tie - carryover created from current hole's bet
+            // Tie - carryover created
             const eligibleNames = activeParticipants
                 .filter((p) => this.isParticipantActive(p, holeNum))
                 .map((p) => p.name);
 
             return {
                 type: "CarryoverCreated",
-                amount: betAmount, // Just the current bet carries over
+                score: minScore,
                 eligibleNames,
             };
         }

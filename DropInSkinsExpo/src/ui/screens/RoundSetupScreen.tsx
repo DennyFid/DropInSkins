@@ -99,7 +99,19 @@ export const RoundSetupScreen = ({ navigation }: any) => {
                 </View>
             </View>
 
-            {lastRoundCOs.length > 0 && (
+            <View style={styles.switchRow}>
+                <Text style={styles.label}>Use Carryovers?</Text>
+                <TouchableOpacity
+                    style={[styles.toggleBtn, useCarryovers ? styles.toggleOn : styles.toggleOff]}
+                    onPress={() => setUseCarryovers(!useCarryovers)}
+                >
+                    <Text style={[styles.toggleText, useCarryovers ? styles.toggleTextOn : styles.toggleTextOff]}>
+                        {useCarryovers ? "YES" : "NO"}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+
+            {lastRoundCOs.length > 0 && useCarryovers && (
                 <View style={styles.coInfo}>
                     <Text style={styles.coText}>
                         💱 {lastRoundCOs.length} Carryover Skins from previous round!

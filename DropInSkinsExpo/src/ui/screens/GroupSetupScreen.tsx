@@ -181,24 +181,31 @@ export const GroupSetupScreen = ({ navigation }: any) => {
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>🔄 Carryovers</Text>
                             <Text style={styles.sectionBody}>
-                                If the lowest score is tied between two or more players, the skin carries over to the next hole.
-                                Accumulated skins are won by the next single winner of a hole.
+                                If a hole is tied, the skin (and its value) carries over.
+                                To win a carried skin, you must have been playing on ALL holes in the carry chain (from the original tie until the win).
+                            </Text>
+                        </View>
+
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>💰 Scoring & Payouts</Text>
+                            <Text style={styles.sectionBody}>
+                                "Classic Skins": Each skin is worth 1 Bet Unit from every other player who played that hole.
+                                Winners collect from losers. Carryovers accumulate and are paid out when won.
                             </Text>
                         </View>
 
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>🚪 Drop In & Out</Text>
                             <Text style={styles.sectionBody}>
-                                Use the "Manage" button during a round to add or remove players.
-                                Players only pay for and win skins for the holes they actually play.
+                                Use the "Manage" button to add or remove players.
+                                If you leave, you still owe for any skins you played that are won later (as carryovers).
                             </Text>
                         </View>
 
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>⚖️ Round Completion</Text>
                             <Text style={styles.sectionBody}>
-                                If a round ends with unsettled skins (ties), they are "inherited" by the next round if you start it immediately.
-                                If you "End Round Early," unsettled skins are refunded to ensure balances always sum to zero.
+                                Unsettled skins are saved and can be carried into the next round!
                             </Text>
                         </View>
 

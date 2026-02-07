@@ -1,6 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { Platform } from 'react-native';
+import { Platform, Share } from 'react-native';
 import { DatabaseService } from '../data/database';
 import { RoundCalculator } from '../domain/RoundCalculator';
 import { Round } from '../types';
@@ -13,6 +13,9 @@ export const ReportService = {
                 alert("No rounds found to export.");
                 return;
             }
+
+            // Interface extension hack to silence TS if `grossWinnings` isn't on the official ReturnType yet in this file's context
+            // But we updated RoundCalculator.ts so it should be fine.
 
             const currentYear = new Date().getFullYear();
             const now = new Date();
@@ -52,7 +55,7 @@ export const ReportService = {
                     console.error(`[ReportService] Failed to calculate results for round #${round.id}`);
                     continue;
                 }
-                const { balances } = results;
+                const { balances, leaderboard, grossWinnings } = results;
 
                 reportText += `Round #${round.id} - ${new Date(round.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}\n`;
                 reportText += `Holes: ${round.totalHoles}, Bet: $${round.betAmount.toFixed(2)}\n\n`;
@@ -76,11 +79,19 @@ export const ReportService = {
                     reportText += `Hole ${hr.holeNumber}: ${outcomeText} (${minScore || '-'})\n`;
                 }
 
-                reportText += `\nROUND BALANCES:\n`;
+                reportText += `\nROUND RESULTS:\n`;
                 Object.entries(balances)
                     .sort((a, b) => b[1] - a[1])
                     .forEach(([name, bal]) => {
-                        reportText += `${name.padEnd(15)}: ${bal >= 0 ? '+' : ''}${bal.toFixed(2)}\n`;
+                        const skins = leaderboard[name] || 0;
+                        const winnings = grossWinnings ? (grossWinnings[name] || 0) : 0;
+
+                        // Format: "Player A: 3 Skins (Winnings: +$900.00) | Net: +$800.00"
+                        const skinsStr = `${skins} Skin${skins !== 1 ? 's' : ''}`;
+                        const winStr = winnings > 0 ? `(+$${winnings.toFixed(2)})` : `($0.00)`;
+                        const netStr = `${bal >= 0 ? '+' : ''}$${bal.toFixed(2)}`;
+
+                        reportText += `${name.padEnd(10)}: ${skinsStr.padEnd(9)} ${winStr.padEnd(12)} | Net: ${netStr}\n`;
                     });
                 reportText += `\n-------------------------------\n`;
             }
@@ -91,6 +102,8 @@ export const ReportService = {
             reportText += `Total Rounds Played: ${yearRounds.length}\n\n`;
 
             const ytdTotals: Record<string, number> = {};
+            const ytdWinnings: Record<string, number> = {};
+
             for (const round of yearRounds) {
                 if (!round.date) continue;
                 const data = await DatabaseService.getFullRoundData(round.id!);
@@ -101,17 +114,30 @@ export const ReportService = {
                     data.carryovers
                 );
                 if (!results || !results.balances) continue;
-                const { balances } = results;
+
+                const { balances, grossWinnings } = results;
+
                 Object.entries(balances).forEach(([name, bal]) => {
                     ytdTotals[name] = (ytdTotals[name] || 0) + bal;
                 });
+
+                if (grossWinnings) {
+                    Object.entries(grossWinnings).forEach(([name, won]) => {
+                        ytdWinnings[name] = (ytdWinnings[name] || 0) + won;
+                    });
+                }
             }
 
             reportText += `CUMULATIVE YTD BALANCES:\n`;
             Object.entries(ytdTotals)
                 .sort((a, b) => b[1] - a[1])
                 .forEach(([name, total]) => {
-                    reportText += `${name.padEnd(15)}: ${total >= 0 ? '+' : ''}${total.toFixed(2)}\n`;
+                    const winnings = ytdWinnings[name] || 0;
+                    const winStr = winnings > 0 ? `(+$${winnings.toFixed(2)})` : `($0.00)`;
+                    const netStr = `${total >= 0 ? '+' : ''}$${total.toFixed(2)}`;
+
+                    // Format: "Player A:   (+$120.00) | Net: +$45.00"
+                    reportText += `${name.padEnd(15)}: ${winStr.padEnd(12)} | Net: ${netStr}\n`;
                 });
 
             reportText += `\n===============================\n`;
@@ -131,21 +157,11 @@ export const ReportService = {
                 document.body.removeChild(link);
                 window.URL.revokeObjectURL(url);
             } else {
-                const baseDir = FileSystem.cacheDirectory;
-                if (!baseDir) throw new Error("No writable directory found.");
-                const fileUri = baseDir + fileName;
-
-                await FileSystem.writeAsStringAsync(fileUri, reportText, { encoding: FileSystem.EncodingType.UTF8 });
-
-                if (await Sharing.isAvailableAsync()) {
-                    await Sharing.shareAsync(fileUri, {
-                        mimeType: 'text/plain',
-                        dialogTitle: 'Export Skins Report',
-                        UTI: 'public.plain-text'
-                    });
-                } else {
-                    alert("Sharing is not available on this device.");
-                }
+                // Share as plain text message
+                const result = await Share.share({
+                    message: reportText,
+                    title: 'Drop-In Skins Report'
+                });
             }
 
         } catch (error: any) {
@@ -192,22 +208,29 @@ export const ReportService = {
                     for (const pName of participants) {
                         const score = outcome.scores[pName] || 0;
                         let outcomeType = "None";
-                        let skinsWon = 0;
 
+                        // Note: Skins tokens are calculated in the aggregate balances, 
+                        // but we can try to deduce per-hole wins if we want detail.
+                        // However, simpler to just list the Score Outcome.
                         if (winners.includes(pName)) {
                             outcomeType = winners.length > 1 ? "Tie" : "Win";
-                            skinsWon = outcome.skinsTotal / winners.length;
                         } else if (winners.length === 0) {
-                            outcomeType = "Carryover";
+                            outcomeType = "Carryover"; // or Skipped
                         }
 
-                        csvContent += `${round.id},${dateStr},${outcome.holeNumber},"${pName}",${score},${outcomeType},${skinsWon.toFixed(2)},0\n`;
+                        // We don't have granular "Skins Won on this hole" easily available in this view structure
+                        // without looking at the skinsBoard diff, but 'Net Balance' is available per player in summary.
+                        // For the detailed CSV, we'll leave "Skins Won" as 0 here and rely on Summary Rows.
+                        csvContent += `${round.id},${dateStr},${outcome.holeNumber},"${pName}",${score},${outcomeType},-,-\n`;
                     }
                 }
 
                 // Add summary rows for the round
                 Object.entries(balances).forEach(([name, bal]) => {
-                    csvContent += `${round.id},${dateStr},SUMMARY,"${name}",0,Round Total,0,${bal.toFixed(2)}\n`;
+                    // Get skins count from skinsBoard if we had it, but we only have 'balances' here in this destructured scope.
+                    // We need to grab 'leaderboard' (skinsBoard) from results.
+                    const skinsCount = results.leaderboard[name] || 0;
+                    csvContent += `${round.id},${dateStr},SUMMARY,"${name}",0,Round Total,${skinsCount},${bal.toFixed(2)}\n`;
                 });
             }
 

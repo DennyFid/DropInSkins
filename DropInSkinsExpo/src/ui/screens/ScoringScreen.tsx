@@ -68,7 +68,7 @@ export const ScoringScreen = ({ route, navigation }: any) => {
         setScores(prev => ({ ...prev, [name]: value }));
     };
 
-    const handleSubmit = async () => {
+    const handleSubmit = async (allowEmpty: boolean = false) => {
         if (submitting) return false;
         Keyboard.dismiss();
 
@@ -81,6 +81,13 @@ export const ScoringScreen = ({ route, navigation }: any) => {
         });
 
         const hasScores = Object.keys(numericScores).length > 0;
+
+        // If we are allowing empty (End Round Early) and there are no scores, 
+        // strictly return true to proceed without saving THIS hole.
+        if (allowEmpty && !hasScores) {
+            return true;
+        }
+
         if (!hasScores && !jumpToHole) {
             alert("Please enter at least one score or use 'Skip Hole'.");
             return false;
@@ -238,7 +245,7 @@ export const ScoringScreen = ({ route, navigation }: any) => {
                         style={[styles.finishBtn, { backgroundColor: '#FF9500' }, submitting && styles.disabledBtn]}
                         disabled={submitting}
                         onPress={async () => {
-                            const success = await handleSubmit();
+                            const success = await handleSubmit(true); // Allow empty to finish without saving this hole
                             if (success) {
                                 await DatabaseService.completeRound(roundId);
                                 navigation.navigate("Stats", { roundId });

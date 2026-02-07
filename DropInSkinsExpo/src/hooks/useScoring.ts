@@ -40,7 +40,13 @@ export const useScoring = (roundId: number) => {
     }, [roundId]);
 
     const calculationResults = useMemo(() => {
-        if (!round) return { leaderboard: {} as Record<string, number>, balances: {} as Record<string, number>, holeOutcomes: [] as any[] };
+        if (!round) return {
+            leaderboard: {} as Record<string, number>,
+            balances: {} as Record<string, number>,
+            grossWinnings: {} as Record<string, number>,
+            grossLosses: {} as Record<string, number>,
+            holeOutcomes: [] as any[]
+        };
         return RoundCalculator.calculateRoundResults(
             round,
             participants,
@@ -52,6 +58,8 @@ export const useScoring = (roundId: number) => {
     const leaderboard = calculationResults.leaderboard;
     const balances = calculationResults.balances;
     const holeOutcomes = calculationResults.holeOutcomes;
+    const grossWinnings = calculationResults.grossWinnings;
+    const grossLosses = calculationResults.grossLosses; // Intentionally exposing logic, though mostly Winnings requested
 
     const joinRound = useCallback(async (name: string) => {
         try {
@@ -105,18 +113,55 @@ export const useScoring = (roundId: number) => {
                 );
 
                 if (outcome.type === "Winner") {
-                    for (const coId of outcome.claimedCarryoverIds) {
+                    const winnerName = outcome.winnerName;
+                    const winnerP = participants.find(p => p.name === winnerName);
+
+                    const claimedIds: number[] = [];
+                    const remainingPool: Carryover[] = [];
+
+                    if (winnerP) {
+                        for (const co of currentPool) {
+                            // Check 1: Was Winner in the original pool?
+                            const playedOrigin = co.eligibleParticipantNames.includes(winnerName);
+
+                            // Check 2: Did Winner play all intermediate holes?
+                            // Range: [originatingHole, currentHole]
+                            let unbrokenChain = true;
+                            const checkStartHole = co.originatingHole === 0 ? 1 : co.originatingHole;
+
+                            for (let h = checkStartHole; h <= res.holeNumber; h++) {
+                                const pStart = winnerP.startHole;
+                                const pEnd = winnerP.endHole ?? 999;
+                                if (h < pStart || h > pEnd) {
+                                    unbrokenChain = false;
+                                    break;
+                                }
+                            }
+
+                            if (playedOrigin && unbrokenChain) {
+                                if (co.id) claimedIds.push(co.id);
+                            } else {
+                                remainingPool.push(co);
+                            }
+                        }
+                    } else {
+                        // Winner object not found (weird), keep all carryovers
+                        remainingPool.push(...currentPool);
+                    }
+
+                    for (const coId of claimedIds) {
                         await DatabaseService.markCarryoverAsWon(coId);
                     }
-                    currentPool = currentPool.filter(co => !outcome.claimedCarryoverIds.includes(co.id || -1));
+                    currentPool = remainingPool;
+
                 } else if (outcome.type === "CarryoverCreated") {
                     if (round.useCarryovers) {
-                        const newIdResult = await DatabaseService.saveCarryover(roundId, res.holeNumber, outcome.amount, outcome.eligibleNames);
+                        const newIdResult = await DatabaseService.saveCarryover(roundId, res.holeNumber, round.betAmount, outcome.eligibleNames);
                         currentPool.push({
                             id: Number(newIdResult),
                             roundId,
                             originatingHole: res.holeNumber,
-                            amount: outcome.amount,
+                            amount: round.betAmount,
                             eligibleParticipantNames: outcome.eligibleNames,
                             isWon: 0
                         });
@@ -156,6 +201,7 @@ export const useScoring = (roundId: number) => {
         participants,
         leaderboard,
         balances,
+        grossWinnings,
         holeResults,
         carryovers,
         loading,

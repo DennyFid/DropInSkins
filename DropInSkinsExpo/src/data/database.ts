@@ -201,18 +201,26 @@ export const initDatabase = async () => {
             );
         `);
 
-        // Migration: Add new columns to rounds if they don't exist
-        try {
-            await db.execAsync("ALTER TABLE rounds ADD COLUMN initialCarryoverAmount REAL DEFAULT 0;");
-            await db.execAsync("ALTER TABLE rounds ADD COLUMN initialCarryoverEligibleNames TEXT DEFAULT '[]';");
-            await db.execAsync("ALTER TABLE rounds ADD COLUMN useCarryovers INTEGER DEFAULT 1;");
+        // Migrations
+        const runMigration = async (sql: string) => {
+            try {
+                await db.execAsync(sql);
+            } catch (e) {
+                // Ignore errors (usually column/table already exists)
+            }
+        };
 
-            // Migration: Add phone and email to players
-            await db.execAsync("ALTER TABLE players ADD COLUMN phone TEXT;");
-            await db.execAsync("ALTER TABLE players ADD COLUMN email TEXT;");
-        } catch (e) {
-            // Columns likely already exist
-        }
+        await runMigration("ALTER TABLE rounds ADD COLUMN initialCarryoverAmount REAL DEFAULT 0;");
+        await runMigration("ALTER TABLE rounds ADD COLUMN initialCarryoverEligibleNames TEXT DEFAULT '[]';");
+        await runMigration("ALTER TABLE rounds ADD COLUMN useCarryovers INTEGER DEFAULT 1;");
+        await runMigration(`
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+        `);
+        await runMigration("ALTER TABLE players ADD COLUMN phone TEXT;");
+        await runMigration("ALTER TABLE players ADD COLUMN email TEXT;");
 
         return db;
     } catch (e) {
@@ -424,5 +432,80 @@ export const DatabaseService = {
         await db.runAsync("DELETE FROM carryovers WHERE roundId = ? AND originatingHole > 0", roundId);
         // Reset valid initial carryovers (hole 0) to not won
         await db.runAsync("UPDATE carryovers SET isWon = 0 WHERE roundId = ? AND originatingHole = 0", roundId);
+    },
+
+    async exportData() {
+        const db = await getDb();
+        const players = await db.getAllAsync("SELECT * FROM players");
+        const rounds = await db.getAllAsync("SELECT * FROM rounds");
+        const participants = await db.getAllAsync("SELECT * FROM participants");
+        const holeResults = await db.getAllAsync("SELECT * FROM hole_results");
+        const carryovers = await db.getAllAsync("SELECT * FROM carryovers");
+
+        return JSON.stringify({
+            version: 1,
+            timestamp: Date.now(),
+            data: { players, rounds, participants, holeResults, carryovers }
+        });
+    },
+
+    async importData(jsonString: string) {
+        const db = await getDb();
+        try {
+            const parsed = JSON.parse(jsonString);
+            if (!parsed.data) throw new Error("Invalid backup format");
+
+            const { players, rounds, participants, holeResults, carryovers } = parsed.data;
+
+            // Simple Transaction-like approach (Sequentially delete then insert)
+            // Note: In a real app we'd want a proper transaction
+            await db.execAsync("DELETE FROM players; DELETE FROM rounds; DELETE FROM participants; DELETE FROM hole_results; DELETE FROM carryovers;");
+
+            // Re-inflate
+            // We use simple loops because runAsync doesn't support bulk insert well in all expo-sqlite versions without manual query building
+            for (const p of players) {
+                await db.runAsync("INSERT INTO players (id, name, phone, email) VALUES (?, ?, ?, ?)", p.id, p.name, p.phone, p.email);
+            }
+            for (const r of rounds) {
+                await db.runAsync(
+                    "INSERT INTO rounds (id, totalHoles, betAmount, date, isCompleted, useCarryovers, initialCarryoverAmount, initialCarryoverEligibleNames) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    r.id, r.totalHoles, r.betAmount, r.date, r.isCompleted, r.useCarryovers, r.initialCarryoverAmount, r.initialCarryoverEligibleNames
+                );
+            }
+            for (const p of participants) {
+                await db.runAsync(
+                    "INSERT INTO participants (id, roundId, name, startHole, endHole) VALUES (?, ?, ?, ?, ?)",
+                    p.id, p.roundId, p.name, p.startHole, p.endHole
+                );
+            }
+            for (const h of holeResults) {
+                await db.runAsync(
+                    "INSERT INTO hole_results (id, roundId, holeNumber, scores) VALUES (?, ?, ?, ?)",
+                    h.id, h.roundId, h.holeNumber, h.scores
+                );
+            }
+            for (const c of carryovers) {
+                await db.runAsync(
+                    "INSERT INTO carryovers (id, roundId, originatingHole, amount, eligibleNames, isWon) VALUES (?, ?, ?, ?, ?, ?)",
+                    c.id, c.roundId, c.originatingHole, c.amount, c.eligibleNames, c.isWon
+                );
+            }
+
+            return true;
+        } catch (e) {
+            console.error("Import failed:", e);
+            throw e;
+        }
+    },
+
+    async getSetting(key: string) {
+        const db = await getDb();
+        const row = await db.getFirstAsync<{ value: string }>("SELECT value FROM settings WHERE key = ?", key);
+        return row ? row.value : null;
+    },
+
+    async setSetting(key: string, value: string) {
+        const db = await getDb();
+        await db.runAsync("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", key, value);
     }
 };

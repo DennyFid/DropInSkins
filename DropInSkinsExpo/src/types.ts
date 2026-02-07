@@ -41,8 +41,8 @@ export interface Carryover {
 }
 
 export type HoleOutcome =
-  | { type: "Winner"; winnerName: string; totalWon: number; claimedCarryoverIds: number[]; carryoverCreated: boolean }
-  | { type: "CarryoverCreated"; amount: number; eligibleNames: string[] }
+  | { type: "Winner"; winnerName: string; score: number }
+  | { type: "CarryoverCreated"; score: number; eligibleNames: string[] }
   | { type: "NoActivePlayers" };
 
 export interface RoundExport {

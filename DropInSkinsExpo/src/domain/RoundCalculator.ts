@@ -15,14 +15,21 @@ export class RoundCalculator {
     ) {
         const skinsBoard: Record<string, number> = {};
         const balanceBoard: Record<string, number> = {};
+        const grossWonBoard: Record<string, number> = {};
+        const grossLostBoard: Record<string, number> = {};
 
         // Initialize boards
         participants.forEach(p => {
             skinsBoard[p.name] = 0;
             balanceBoard[p.name] = 0;
+            grossWonBoard[p.name] = 0;
+            grossLostBoard[p.name] = 0;
         });
 
         console.log(`[RoundCalc] Starting calculation for round ${round.id}. Total COs in history: ${allCarryovers.length}`);
+
+        // We track outstanding skins. Each "Skin" is an object representing a hole that hasn't been won yet.
+        // It persists until won.
         let currentOutstandingCOs: Carryover[] = [];
 
         // Only process carryovers if the round is configured to use them
@@ -31,21 +38,16 @@ export class RoundCalculator {
             if (initialCOs.length > 0) {
                 console.log(`[RoundCalc] Seeding ${initialCOs.length} inherited carryovers:`, initialCOs);
                 currentOutstandingCOs.push(...initialCOs);
-
-                // Deduct the value of inherited carryovers from eligible participants' start balances
-                // so that the simulation "funds" the starting pot.
-                initialCOs.forEach(co => {
-                    co.eligibleParticipantNames.forEach(name => {
-                        balanceBoard[name] = (balanceBoard[name] || 0) - co.amount;
-                    });
-                });
+                // In Classic Skins, inherited skins just sit in the pool waiting to be won.
+                // No initial deduction needed because the payment happens when won.
             }
         }
 
         const sortedResults = [...holeResults].sort((a, b) => a.holeNumber - b.holeNumber);
-        console.log(`[RoundCalc] Simulating round with ${sortedResults.length} holes and ${allCarryovers.length} total COs available in history.`);
 
         const holeOutcomes: any[] = [];
+        const processedCarryoverIds = new Set<number>(); // Track which DB COs we've loaded
+
         sortedResults.forEach(res => {
             const activeParts = participants.filter(p =>
                 res.holeNumber >= p.startHole && (p.endHole === null || res.holeNumber <= p.endHole)
@@ -55,84 +57,144 @@ export class RoundCalculator {
                 res.holeNumber,
                 res.participantScores,
                 activeParts,
-                currentOutstandingCOs,
+                currentOutstandingCOs, // passed for reference, but engine doesn't use it anymore for logic
                 round.betAmount
             );
 
-            holeOutcomes.push({
+            const holeOutcomeData: any = {
                 holeNumber: res.holeNumber,
                 scores: res.participantScores,
                 type: outcome.type,
-                skinsTotal: round.betAmount * activeParts.length,
-                winners: outcome.type === "Winner" ? [outcome.winnerName] : (outcome.type === "CarryoverCreated" ? outcome.eligibleNames : [])
-            });
+                skinsTotal: 0, // Calculated below
+                winners: []
+            };
 
             if (outcome.type === "Winner") {
-                // Deduct bet for current hole from all active participants
-                activeParts.forEach(p => {
-                    balanceBoard[p.name] = (balanceBoard[p.name] || 0) - round.betAmount;
-                });
+                const winnerName = outcome.winnerName;
+                const winnerP = participants.find(p => p.name === winnerName);
+                holeOutcomeData.winners = [winnerName];
 
-                // Skin count is 1 (the hole itself) + any claimed carryover holes
-                const skinCount = 1 + outcome.claimedCarryoverIds.length;
-                skinsBoard[outcome.winnerName] = (skinsBoard[outcome.winnerName] || 0) + skinCount;
+                if (winnerP) {
+                    // 1. Winner wins the Current Hole Skin
+                    // Value: (ActivePlayers - 1) * Bet
+                    const currentSkinValue = (activeParts.length - 1) * round.betAmount;
 
-                // Winner takes the hole pot (sum of all active participants' bets for this hole)
-                let holeWinnings = activeParts.length * round.betAmount;
+                    // Transaction: Winner gets Value.
+                    balanceBoard[winnerName] = (balanceBoard[winnerName] || 0) + currentSkinValue;
+                    grossWonBoard[winnerName] = (grossWonBoard[winnerName] || 0) + currentSkinValue;
+                    skinsBoard[winnerName] = (skinsBoard[winnerName] || 0) + 1;
 
-                // Add claimed carryovers to the winner's winnings
-                outcome.claimedCarryoverIds.forEach(coId => {
-                    const co = currentOutstandingCOs.find(c => c.id === coId);
-                    if (co) {
-                        // For mid-round COs, the participants already paid co.amount on the originating hole.
-                        // The total pot for that CO is co.amount * number of people who tied.
-                        holeWinnings += co.amount * co.eligibleParticipantNames.length;
+                    // Transaction: Losers (active) pay Bet.
+                    activeParts.forEach(loser => {
+                        if (loser.name !== winnerName) {
+                            balanceBoard[loser.name] = (balanceBoard[loser.name] || 0) - round.betAmount;
+                            grossLostBoard[loser.name] = (grossLostBoard[loser.name] || 0) + round.betAmount;
+                        }
+                    });
+
+                    // 2. Check Chain Eligibility for Carryovers
+                    // "Only players who were active on all carried holes are eligible to win the carried skins"
+                    // Chain validation: For a CO from OriginHole, did Winner play OriginHole...CurrentHole?
+
+                    const claimedCOs: Carryover[] = [];
+                    const remainingCOs: Carryover[] = [];
+
+                    for (const co of currentOutstandingCOs) {
+                        // Check 1: Was Winner in the original pool? (Part of eligibility list)
+                        const playedOrigin = co.eligibleParticipantNames.includes(winnerName);
+
+                        // Check 2: Did Winner play all intermediate holes?
+                        let unbrokenChain = true;
+
+                        // If Origin is 0 (Previous Round), we treat it as "Available if you played Hole 1 onwards"?
+                        // Or "Available if you played Origin Round"? 
+                        // Usually carried skins from previous round are available to everyone who starts Round 2.
+                        // So for Origin=0, we check participation from Hole 1 to Current.
+                        const checkStartHole = co.originatingHole === 0 ? 1 : co.originatingHole;
+
+                        for (let h = checkStartHole; h <= res.holeNumber; h++) {
+                            const pStart = winnerP.startHole;
+                            const pEnd = winnerP.endHole ?? 999;
+                            if (h < pStart || h > pEnd) {
+                                unbrokenChain = false;
+                                break;
+                            }
+                        }
+
+                        if (unbrokenChain) {
+                            claimedCOs.push(co);
+                        } else {
+                            remainingCOs.push(co);
+                        }
                     }
-                });
 
-                balanceBoard[outcome.winnerName] = (balanceBoard[outcome.winnerName] || 0) + holeWinnings;
+                    // Process Claimed COs
+                    claimedCOs.forEach(co => {
+                        // Value of this carried skin = (Original Participants - 1) * CO Amount (Bet)
+                        // Note: co.eligibleParticipantNames stores the participants on the originating hole.
+                        const poolSize = co.eligibleParticipantNames.length;
+                        const skinValue = (poolSize - 1) * co.amount;
 
-                currentOutstandingCOs = currentOutstandingCOs.filter(co => !outcome.claimedCarryoverIds.includes(co.id || -1));
-            } else if (outcome.type === "CarryoverCreated") {
-                // Deduct bet for current hole from all active participants to fund the CO
-                activeParts.forEach(p => {
-                    balanceBoard[p.name] = (balanceBoard[p.name] || 0) - round.betAmount;
-                });
+                        balanceBoard[winnerName] += skinValue;
+                        grossWonBoard[winnerName] += skinValue;
+                        skinsBoard[winnerName] += 1;
 
-                // Only create/carry over if allowed
-                if (round.useCarryovers) {
-                    // Find the ACTUAL CO object from the provided carryovers for this hole
-                    // This ensures we use the persisted CO object with its correct ID and details
-                    const dbCOs = allCarryovers.filter(c => c.originatingHole === res.holeNumber);
-                    if (dbCOs.length > 0) {
-                        currentOutstandingCOs.push(...dbCOs);
-                    } else {
-                        // Fallback for simulation of rounds without full DB persistence (if needed)
-                        // This creates a temporary CO object if no persisted one is found for the current hole.
-                        currentOutstandingCOs.push({
-                            id: Math.random(), // Assign a temporary ID
-                            roundId: round.id!,
-                            originatingHole: res.holeNumber,
-                            amount: outcome.amount,
-                            eligibleParticipantNames: outcome.eligibleNames,
-                            isWon: 0
+                        // Losers from the ORIGINATING hole pay.
+                        // We must find them. They are in co.eligibleParticipantNames.
+                        // Wait, do we deduct from them NOW?
+                        // Yes. "Classic" means you pay when it is WON.
+                        // So even if they left the game, they owe this money because they lost the skin they tied on.
+                        // This might result in people who left having negative balances. This is correct for Classic Skins.
+
+                        co.eligibleParticipantNames.forEach(loserName => {
+                            if (loserName !== winnerName) {
+                                balanceBoard[loserName] = (balanceBoard[loserName] || 0) - co.amount;
+                                grossLostBoard[loserName] = (grossLostBoard[loserName] || 0) + co.amount;
+                            }
                         });
-                    }
+                    });
+
+                    // Update Outstanding List
+                    currentOutstandingCOs = remainingCOs;
+
+                    // Update Report Data
+                    holeOutcomeData.skinsTotal = activeParts.length * round.betAmount; // Approximate "Pot" visual for UI, though logic is per-person
+                }
+
+            } else if (outcome.type === "CarryoverCreated") {
+                // Tie - Create a new Carryover Object
+                // No money changes hands.
+
+                if (round.useCarryovers) {
+                    const newCO: Carryover = {
+                        id: Math.random(), // Temporary ID for simulation
+                        roundId: round.id!,
+                        originatingHole: res.holeNumber,
+                        amount: round.betAmount,
+                        eligibleParticipantNames: outcome.eligibleNames, // Players active on this hole
+                        isWon: 0
+                    };
+                    currentOutstandingCOs.push(newCO);
+                    holeOutcomeData.winners = outcome.eligibleNames; // "Winners" of the tie (eligible for next)
                 }
             }
+
+            holeOutcomes.push(holeOutcomeData);
         });
 
-        // Final adjustment: If the round is completed, unsettled carryovers are effectively 
-        // "refunded" to ensure the total Net balances sum to zero.
-        if (round.isCompleted) {
-            console.log(`[RoundCalc] Round finished with ${currentOutstandingCOs.length} unsettled carryovers. Refunding...`);
-            currentOutstandingCOs.forEach(co => {
-                co.eligibleParticipantNames.forEach(name => {
-                    balanceBoard[name] = (balanceBoard[name] || 0) + co.amount;
-                });
-            });
-        }
+        // "Refund" logic is NOT valid for Classic Skins because skins just stay outstanding.
+        // Or do we expire them? 
+        // User said: "Losses are uncapped". "Carried skins... inherited by next round".
+        // So we do NOT refund. They remain in the "currentOutstandingCOs" to be saved to DB for next round.
+        // We might want to return them so the DB can update.
 
-        return { leaderboard: skinsBoard, balances: balanceBoard, holeOutcomes };
+        return {
+            leaderboard: skinsBoard,
+            balances: balanceBoard,
+            grossWinnings: grossWonBoard,
+            grossLosses: grossLostBoard,
+            holeOutcomes,
+            outstandingCarryovers: currentOutstandingCOs
+        };
     }
 }

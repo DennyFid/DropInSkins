@@ -8,7 +8,7 @@ import { DatabaseService } from "../../data/database";
 
 export const StatsScreen = ({ route, navigation }: any) => {
     const { roundId } = route.params;
-    const { round, participants, leaderboard, balances, holeResults, loading, loadData } = useScoring(roundId);
+    const { round, participants, leaderboard, balances, grossWinnings, holeResults, loading, loadData } = useScoring(roundId);
     const [exportLoading, setExportLoading] = useState(false);
 
     useFocusEffect(
@@ -23,15 +23,14 @@ export const StatsScreen = ({ route, navigation }: any) => {
     const stats = participants.map(p => {
         const skinsWon = leaderboard[p.name] || 0;
         const netReturn = balances[p.name] || 0;
+        const winnings = grossWinnings ? (grossWinnings[p.name] || 0) : 0;
 
-        // Holes played - count holes from their start until they leave OR the last scored hole
+        // Holes played count logic...
         const lastScoredHole = Math.max(0, ...holeResults.map(r => r.holeNumber));
         const endHole = p.endHole || lastScoredHole;
 
         let holesCount = 0;
         for (let h = p.startHole; h <= endHole; h++) {
-            // Only count if there is a result for this hole
-            // Only count if there is a result for this hole AND it has at least one valid score
             const result = holeResults.find(r => r.holeNumber === h);
             if (result && Object.values(result.participantScores).some(s => s > 0)) {
                 holesCount++;
@@ -42,12 +41,14 @@ export const StatsScreen = ({ route, navigation }: any) => {
             name: p.name,
             skinsWon,
             holesPlayed: holesCount,
-            netReturn
+            netReturn,
+            winnings
         };
     });
 
     return (
         <ScrollView style={styles.container}>
+            {/* ... header ... */}
             <View style={styles.headerRow}>
                 <View>
                     <Text style={styles.title}>Round Summary</Text>
@@ -92,7 +93,7 @@ export const StatsScreen = ({ route, navigation }: any) => {
                     <Text style={[styles.cell, styles.headerCell, { flex: 2 }]}>Player</Text>
                     <Text style={[styles.cell, styles.headerCell]}>Skins</Text>
                     <Text style={[styles.cell, styles.headerCell]}>Holes</Text>
-                    <Text style={[styles.cell, styles.headerCell, { flex: 1.5 }]}>Net ($)</Text>
+                    <Text style={[styles.cell, styles.headerCell, { flex: 2 }]}>Winnings</Text>
                 </View>
 
                 {stats.map((row, index) => (
@@ -100,8 +101,8 @@ export const StatsScreen = ({ route, navigation }: any) => {
                         <Text style={[styles.cell, { flex: 2, fontWeight: '500' }]}>{row.name}</Text>
                         <Text style={styles.cell}>{row.skinsWon}</Text>
                         <Text style={styles.cell}>{row.holesPlayed}</Text>
-                        <Text style={[styles.cell, { flex: 1.5, fontWeight: 'bold', color: row.netReturn >= 0 ? '#4CD964' : '#FF3B30' }]}>
-                            {row.netReturn >= 0 ? '+' : ''}{row.netReturn.toFixed(2)}
+                        <Text style={[styles.cell, { flex: 2, fontWeight: 'bold', color: '#4CD964' }]}>
+                            {row.winnings > 0 ? '+' : ''}{row.winnings.toFixed(2)}
                         </Text>
                     </View>
                 ))}
